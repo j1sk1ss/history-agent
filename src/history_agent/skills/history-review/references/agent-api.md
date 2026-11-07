@@ -1,0 +1,174 @@
+# History API for review agents
+
+These actions extend `/history/api?act=...`. Existing actions and response shapes
+are unchanged. `get_actions` includes all actions; authenticated `agent_actions`
+provides input JSON Schemas, parameter placement, read/write flags and limits.
+Extension responses are `{"status":"OK","data":...}`; errors use the existing
+HTTP 400 / `status: ERROR` envelope. All actions require a valid history session.
+
+| Action | Purpose |
+|---|---|
+| `agent_find_warnings` | Filter active warning instances by checker name |
+| `agent_compare_warnings` | Page appeared, disappeared or matched warnings between two snapshots |
+| `agent_checker_info` | Get catalog metadata for an exact checker name |
+| `agent_source` | Read bounded, numbered source lines from a snapshot |
+| `agent_resolve_symbol` | Follow DXR definition, declaration or usage links |
+| `agent_set_review` | Save TP / FP / WF / UC / UD with an explanation |
+| `agent_actions` | Discover extension contracts |
+
+## Find warnings by checker name
+
+GET parameters: required `project_id`, `stream_id`, concrete `snapshot_id`,
+`checker_name`; optional `match` (`exact`, default, or `contains`), `offset`
+(default 0) and `limit` (default 20, maximum 100). `HEAD` is rejected: resolve
+the desired analysis with `get_snapshots` first. Name matching ignores case;
+names are checker types such as `DEREF_OF_NULL`, not warning IDs or message text.
+
+Filtering happens before pagination. Results are ordered by source file, line
+and warning ID. The response includes `warnings`, `total`, `offset`, `limit`,
+`has_more` and, when more results exist, `next_offset`. Each warning includes
+`warning_id`, `checker_name`, `message`, `function_name`, `mti`, `details`,
+`location`, `classification_name`, `comment`, `triaged_status` and
+`user_attributes`. Location includes `file_path`, `line`, `hash` and optional
+`snapshot_override`. Follow the override when reading its source.
+
+Use the returned ID with existing `get_warning`, `get_warning_trace_and_role`
+and `get_all_reviews` for full instance information. An empty result is valid,
+including for an unknown checker name. Project read permissions and the normal
+active-warning selection are enforced by the existing API.
+
+Example arguments:
+
+```json
+{"project_id":0,"stream_id":"master","snapshot_id":"<snapshot>",
+ "checker_name":"DEREF_OF_NULL","match":"exact","offset":0,"limit":20}
+```
+
+## Compare snapshots and select a review queue
+
+`agent_compare_warnings` accepts GET `project_id`, `stream_id`, `snapshot_id`
+(current) and `base_snapshot_id`. Optional `base_project_id` / `base_stream_id`
+default to the current side. Both snapshots must be concrete; HEAD is rejected.
+`subset` defaults to `appeared`; alternatives are `disappeared` and `both`.
+Optional `checker_name` is an exact, case-insensitive filter before pagination.
+`offset` defaults to 0; `limit` defaults to 20 and is at most 100.
+
+The matching algorithm is the existing Svace2Svace UI comparator, including
+renames, rather than subtraction of warning IDs. Current-only is UI First
+(`appeared`); baseline-only is UI Second (`disappeared`). Matched current
+warnings (`both`) contain `counterparts` with baseline warning data and matching
+`kind` (`SAME`/`RENAME`). Each current warning occurs once even with multiple
+counterparts. No chronological ordering is inferred; swapping sides reverses the
+meaning of appeared/disappeared.
+
+The response contains `current`, `base`, `scope`, `subset`, `warnings`, `total`,
+`offset`, `limit`, `has_more` and optional `next_offset`. Warning data follows
+`agent_find_warnings`. The evidence/review `scope` is baseline for disappeared,
+current otherwise. Disappearance is not a classification and does not prove a fix.
+
+On older servers the Python adapter exposes the same action by adapting
+`get_warnings_compare_svace2svace`, correcting its reversed firstOnly/secondOnly
+fields and resolving checker IDs. It downloads the complete legacy comparison
+outside the model context before filtering/paging; the 2 MiB HTTP response limit
+still applies. Rebuild the server for native pagination on large comparisons.
+
+The microharness additionally discovers local `review_diff` through its three
+tools. It accepts the comparison scope, subset (default `appeared`), optional
+`checker_name`, `instructions` and `overwrite`, or only `job_id` for resume.
+`history_read` generates proposals; authorized `history_write` saves them.
+Every warning gets a fresh context with its exact checker guide and source on
+the selected side. Checkpoints pin both sides, subset, mode, endpoint and model;
+finished warnings are not repeated on resume. These model-running actions are
+local to `history-chat`; other MCP clients iterate the read comparison action
+and save reviews with `agent_set_review`.
+
+## Get checker information by name
+
+`agent_checker_info` takes required GET parameter `checker_name`. Matching is
+exact and case-insensitive. Unknown names are errors. The catalog comes from
+the server's suppression settings and does not depend on a project's findings.
+
+The response contains `checker_name`, `display_name`, `description`,
+`description_source`, `severity`, `reliability`, `group`, `languages`, `cwe`
+(numeric IDs) and `cert` (rule IDs). Descriptions use checker text when present,
+otherwise group comments or the group title. `description_source` distinguishes
+`checker`, `group` and `group_title`; a group title is not detailed checker help.
+Deprecated or custom checkers absent from this server's catalog can still be
+found by `agent_find_warnings`, but have no invented catalog description.
+
+## Source, navigation and review
+
+`agent_source` requires `project_id`, concrete `snapshot_id`, `file` and one-based
+`line`. `before` and `after` default to 10; the total window is at most 200 lines
+and 65536 characters. The response identifies the source hash and encoding,
+contains numbered `lines`, and indicates continuation through `has_more` /
+`next_line`. Files are resolved from the selected snapshot's source tree.
+
+`agent_resolve_symbol` adds one-based `column`, `relation` (`definition`,
+`declaration`, `usage`), `offset` (default 0) and `limit` (default 20, max 100).
+It requires DXR data. Overlapping tokens remain separate candidates; token group
+IDs are strings and target pagination applies to each candidate independently.
+
+`agent_set_review` requires GET `project_id`, explicit `stream_id`, `warning_id`
+and POST `classification`, `comment`. A non-empty explanation is mandatory.
+TP = Confirmed, FP = False Positive, WF = Won't fix, UC = Unclear, UD = Undecided.
+Use TP when the detected issue holds and is relevant, FP when the reported condition does not
+hold, and WF when the condition does hold but is not actionable in the project's context.
+WF is not a false positive. A technically correct warning in an intentional test fixture or
+accepted implementation can be WF when that rationale is supported by evidence.
+Writes use the normal permission and history commit API and affect current
+branch state. They have no conditional-write protection; inspect existing
+reviews before overwriting and inspect history before retrying an uncertain
+write. The legacy review API can materialize an unset `trust_rank` as zero;
+this extension does not change that existing behavior.
+
+MCP adapters and model/client setup are maintained outside the Svace repository.
+
+## Guide articles in the Python adapter
+
+`agent_resolve_history_url` is another adapter-local read action. Its required
+`url` is a SvaceLight `show` or `compare_svace2svace` link from the configured
+history origin and deployment prefix. It decodes route segments, resolves
+project names through project groups and pins HEAD through `get_snapshots`.
+It returns `current`, optional `base` / `subset`, evidence/review `scope`,
+ready `read_action` / `read_arguments` and optional local `review_action` /
+`review_arguments`. Local review actions require the microharness; other MCP
+clients use the read action and their own review loop. No web page is fetched
+and no reviews are saved. A missing comparison subset defaults to appeared.
+The selected warning/source location is returned separately as a UI cursor.
+An unknown project or ambiguous name is an error rather than a guessed ID.
+
+`history-chat` resolves links from the user's request before the first model
+completion and supplies compact tool results with these arguments. Resolved
+links do not authorize review writes; the user's request and `--allow-write`
+still control saving.
+
+The adapter enriches `agent_checker_info` with `documentation` from the connected
+server's `/guide`: `status`, `checker_name`, `guide_title`, `source_url`, `text`,
+`offset`, `total_characters`, `has_more` and optional `next_offset`. The original
+catalog description remains unchanged. Missing guide/articles are explicitly
+reported as `documentation.status: unavailable` with an error explanation.
+
+`agent_checker_documentation` is an adapter-local read action, not an HTTP API
+route. It accepts `checker_name`, `offset` (default 0), and `limit` (default 3000,
+max 8000 characters). It returns only the exact checker article, including
+examples, never a parent rule or neighboring checker as a substitute. The full
+guide is indexed and cached in Python for five minutes, outside model context;
+each reply contains only the requested article/page. Deployment prefixes and
+the configured history origin are preserved; external links are not fetched.
+
+## Adapter-local `current` defaults and model skills
+
+`history_current(project_id?, project_name?, stream_id?)` (a dedicated MCP tool)
+and `history_read(action="current",arguments={...})` return `scope` containing
+`project_id`, `stream_id`, and concrete `snapshot_id`, plus `project_name` and
+`selection_policy`. The adapter enumerates project groups once, sorts project
+names and branches alphabetically, and uses the **first** snapshot returned by
+`get_snapshots(number=1)`. It never selects `HEAD` or guesses an unavailable
+project; a missing branch/snapshot is an error. A user-supplied SvaceLight URL
+always overrides this default and must be resolved through the link action.
+
+Four task-specific skills can be listed with `history_discover(action="skills")`:
+`history-current`, `history-review`, `history-batch`, `history-navigation`.
+Read only the needed file with `history_discover(action="skill:NAME")`. The
+legacy `history://workflow` resource remains available for older clients.

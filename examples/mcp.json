@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "history": {
+      "command": "/absolute/path/to/history-agent/.venv/bin/python",
+      "args": ["/absolute/path/to/history-agent/mcp_server.py"],
+      "env": {
+        "HISTORY_URL": "http://127.0.0.1:8060"
+      }
+    }
+  }
+}

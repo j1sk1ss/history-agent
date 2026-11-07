@@ -1,0 +1,70 @@
+# Python environments and bytecode
+.venv/
+.venv-*/
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Packaging
+*.egg-info/
+*.egg
+.eggs/
+build/
+dist/
+
+# Test, lint and type-check caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pytype/
+.pyre/
+.tox/
+.nox/
+.cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Local credentials and connection settings
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+/config.json
+/history.json
+*.local.json
+/.history-agent/
+/.config/history-agent/
+/.local/state/history-agent/
+/.codex/auth.json
+/.aws/credentials
+/.aws/config
+
+# Review checkpoints, SQLite sidecars and job locks
+/jobs/
+*.sqlite3
+*.sqlite3-*
+*.sqlite
+*.sqlite-*
+????????????????????????????????.lock
+
+# Logs and interrupted atomic writes / configuration backups
+*.log
+.history-agent-*
+*.history-agent-*.bak
+
+# Local editors and operating-system files
+/.idea/
+/.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini

@@ -1,0 +1,9 @@
+# Replace the Python/script paths and make these variables available to Codex.
+[mcp_servers.history]
+command = "/absolute/path/to/history-agent/.venv/bin/python"
+args = ["/absolute/path/to/history-agent/mcp_server.py"]
+env_vars = ["HISTORY_URL", "HISTORY_USER", "HISTORY_PASSWORD", "HISTORY_SESSION"]
+
+# For one shared local process instead, replace this entry with:
+# [mcp_servers.history]
+# url = "http://127.0.0.1:8765/mcp"

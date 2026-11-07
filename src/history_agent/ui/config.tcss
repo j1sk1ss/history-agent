@@ -1,0 +1,33 @@
+Screen {
+    background: #101010;
+    color: #dddddd;
+    align: center middle;
+}
+#settings {
+    width: 76;
+    max-width: 100%;
+    height: auto;
+    max-height: 100%;
+    padding: 1 3;
+}
+#settings-title {
+    text-style: bold;
+    margin-bottom: 1;
+}
+.muted { color: #888888; height: auto; }
+Label { margin-top: 1; }
+Input, Select { margin: 0; }
+Input { background: #191919; border: tall #333333; }
+Input:focus { border: tall #777777; }
+Input.-valid { border: tall #333333; }
+Input > .input--placeholder { color: #dddddd 40%; }
+Collapsible { background: transparent; border: none; padding: 0; margin-top: 1; }
+Checkbox { background: transparent; border: none; }
+#settings-error { color: #e79797; height: auto; }
+#settings-actions {
+    dock: bottom;
+    height: auto;
+    margin-top: 1;
+    background: #101010;
+}
+Button { margin-right: 1; }
