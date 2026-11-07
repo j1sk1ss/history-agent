@@ -6,6 +6,7 @@ from pathlib import Path
 from textual import on
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, VerticalScroll
+from textual.screen import ModalScreen
 from textual.widgets import (
     Button,
     Checkbox,
@@ -31,11 +32,14 @@ from ..config import (
 from .settings_help import SETTINGS_HELP
 
 
-class ConfigurationApp(App):
+class ConfigurationScreen(ModalScreen):
     TITLE = "History settings"
     CSS_PATH = Path(__file__).with_name("config.tcss")
-    ENABLE_COMMAND_PALETTE = False
-    BINDINGS = [("escape", "cancel", "Cancel"), ("ctrl+q", "cancel", "Quit")]
+    BINDINGS = [
+        ("escape", "cancel", "Back"),
+        ("ctrl+q", "cancel", "Back"),
+        ("ctrl+c", "cancel", "Back"),
+    ]
 
     def __init__(self, args):
         super().__init__()
@@ -192,8 +196,22 @@ class ConfigurationApp(App):
             self.query_one("#settings-error", Static).update(str(error))
             self.query_one("#settings-error").scroll_visible()
             return
-        self.exit(args)
+        self.dismiss(args)
 
     @on(Button.Pressed, "#cancel")
     def action_cancel(self):
-        self.exit()
+        self.dismiss()
+
+
+class ConfigurationApp(App):
+    """Standalone settings entry point for initial setup and --configure."""
+
+    TITLE = "History settings"
+    ENABLE_COMMAND_PALETTE = False
+
+    def __init__(self, args):
+        super().__init__()
+        self.args = args
+
+    def on_mount(self):
+        self.push_screen(ConfigurationScreen(self.args), self.exit)

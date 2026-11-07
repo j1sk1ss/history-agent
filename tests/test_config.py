@@ -204,6 +204,21 @@ class ConfigurationTest(unittest.TestCase):
         backend.assert_not_awaited()
         self.assertFalse(self.path.exists())
 
+    def test_saved_chat_settings_reconnect_without_reopening_editor(self):
+        configured = parse_args(
+            ["--provider", "llama", "--model", "updated", "--prompt", "Old"]
+        )
+        with (
+            patch("history_agent.ui.config.ConfigurationApp") as editor,
+            patch("history_agent.cli.run", new_callable=AsyncMock) as backend,
+        ):
+            backend.side_effect = [{"settings": configured}, None]
+            main(["--provider", "llama", "--model", "original"])
+        editor.assert_not_called()
+        self.assertEqual(backend.await_count, 2)
+        self.assertIs(backend.await_args.args[0], configured)
+        self.assertIsNone(configured.prompt)
+
     def test_non_terminal_first_launch_has_short_actionable_error(self):
         with (
             patch("sys.stdin.isatty", return_value=False),

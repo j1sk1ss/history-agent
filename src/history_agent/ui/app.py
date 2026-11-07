@@ -13,6 +13,7 @@ from ..jobs import delete_job, unfinished_jobs
 from ..terminal import ThinkingText
 from .art import WelcomeArt
 from .bridge import BackendEvent, UIAdapter
+from .config import ConfigurationScreen
 from .formatting import pretty, tool_preview
 from .jobs import UnfinishedJobs
 from .metrics import SessionMetrics
@@ -363,8 +364,26 @@ class HistoryApp(App):
             )
 
     def action_configure(self):
-        if self.waiting or self.backend_done:
-            self.exit("configure")
+        if (self.waiting or self.backend_done) and not isinstance(
+            self.screen, ConfigurationScreen
+        ):
+            self.push_screen(
+                ConfigurationScreen(self.args), self.settings_closed
+            )
+
+    def settings_closed(self, args):
+        if args is not None:
+            self.exit({"settings": args})
+
+    def check_action(self, action, parameters):
+        if isinstance(self.screen, ConfigurationScreen) and action in (
+            "quit",
+            "cancel",
+            "configure",
+            "toggle_details",
+        ):
+            return False
+        return super().check_action(action, parameters)
 
     def action_cancel(self):
         if self.adapter.work and not self.adapter.work.done():

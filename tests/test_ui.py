@@ -3,7 +3,6 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from textual.containers import VerticalScroll
@@ -13,7 +12,7 @@ from history_agent.cli import parse_args
 from history_agent.config import load_defaults
 from history_agent.jobs import job_lock
 from history_agent.ui.app import HistoryApp
-from history_agent.ui.config import ConfigurationApp
+from history_agent.ui.config import ConfigurationApp, ConfigurationScreen
 from history_agent.ui.formatting import pretty, tool_preview
 from history_agent.ui.jobs import UnfinishedJobs
 from history_agent.ui.metrics import SessionMetrics
@@ -84,10 +83,12 @@ class FormatterTest(unittest.TestCase):
 
 class InterfaceTest(unittest.IsolatedAsyncioTestCase):
     def make_app(self):
-        args = SimpleNamespace(
-            provider="openai-compatible",
-            allow_write=False,
-            batch_state_dir=Path("/tmp/history-agent-test-jobs"),
+        args = parse_args(
+            [
+                "--read-only",
+                "--batch-state-dir",
+                "/tmp/history-agent-test-jobs",
+            ]
         )
         return HistoryApp(args)
 
@@ -117,7 +118,10 @@ class InterfaceTest(unittest.IsolatedAsyncioTestCase):
                 0.4,
             )
             self.assertEqual(app.focused, composer)
-            await pilot.click("#review-project")
+            self.assertTrue(
+                await pilot.click("#review-project", offset=(2, 0))
+            )
+            await pilot.pause()
             self.assertEqual(app.inputs.get_nowait(), "/batch")
             app.adapter.event("begin", text="Review all warnings")
             await pilot.pause()
@@ -126,12 +130,50 @@ class InterfaceTest(unittest.IsolatedAsyncioTestCase):
     async def test_settings_command_is_handled_locally(self):
         app = self.make_app()
         async with app.run_test(size=(100, 30)) as pilot:
+            app.adapter.event("begin", text="Review this warning")
+            app.adapter.event("content", text="Existing response")
+            app.adapter.event("finish")
             app.adapter.event("input_ready")
             await pilot.pause()
+            chat = app.screen
+            cards = list(app.cards)
+            composer = app.query_one("#composer", Input)
+            composer.value = "Unsent draft"
+            app.metrics.session_in = 123
+            app.last_job_id = "a" * 32
             app.submit("/config")
             await pilot.pause()
-            self.assertEqual(app.return_value, "configure")
+            self.assertIsInstance(app.screen, ConfigurationScreen)
+            app.screen.query_one("#model", Input).value = "Discard this"
+            await pilot.click("#cancel")
+            await pilot.pause()
+            self.assertIs(app.screen, chat)
+            self.assertIsNone(app.return_value)
+            self.assertEqual(app.cards, cards)
+            self.assertEqual(app.metrics.session_in, 123)
+            self.assertEqual(app.last_job_id, "a" * 32)
+            self.assertEqual(composer.value, "Unsent draft")
+            self.assertIs(app.focused, composer)
+            self.assertIsNone(app.args.model)
             self.assertTrue(app.inputs.empty())
+
+    async def test_settings_keyboard_back_returns_to_home(self):
+        app = self.make_app()
+        async with app.run_test(size=(100, 30)) as pilot:
+            app.adapter.event("input_ready")
+            await pilot.pause()
+            home = app.screen
+            for key in ("escape", "ctrl+q", "ctrl+c"):
+                await pilot.click("#settings")
+                await pilot.pause()
+                self.assertIsInstance(app.screen, ConfigurationScreen)
+                await pilot.press(key)
+                await pilot.pause()
+                self.assertIs(app.screen, home)
+                self.assertTrue(app.query_one("#body").has_class("home"))
+                self.assertTrue(app.waiting)
+            app.submit("Can still chat")
+            self.assertEqual(app.inputs.get_nowait(), "Can still chat")
 
     async def test_fatal_error_allows_reload_and_error_is_shown_once(self):
         app = self.make_app()
@@ -333,6 +375,20 @@ class ConfigurationInterfaceTest(unittest.IsolatedAsyncioTestCase):
         environment.start()
         self.addCleanup(environment.stop)
 
+    async def test_save_from_chat_returns_new_settings_for_reconnection(self):
+        app = HistoryApp(parse_args([]))
+        async with app.run_test(size=(100, 45)) as pilot:
+            app.adapter.event("input_ready")
+            await pilot.pause()
+            await pilot.press("ctrl+o")
+            await pilot.pause()
+            self.assertIsInstance(app.screen, ConfigurationScreen)
+            app.screen.query_one("#model", Input).value = "new-model"
+            await pilot.click("#save")
+            await pilot.pause()
+            self.assertEqual(app.return_value["settings"].model, "new-model")
+            self.assertEqual(load_defaults()["model"], "new-model")
+
     async def test_credentials_and_hover_descriptions(self):
         app = ConfigurationApp(parse_args([]))
         async with app.run_test(size=(100, 60)) as pilot:
@@ -340,17 +396,17 @@ class ConfigurationInterfaceTest(unittest.IsolatedAsyncioTestCase):
                 any(
                     "Save these defaults for future launches"
                     in str(widget.render())
-                    for widget in app.query("Static")
+                    for widget in app.screen.query("Static")
                 )
             )
-            password = app.query_one("#history_password", Input)
+            password = app.screen.query_one("#history_password", Input)
             self.assertTrue(password.password)
-            for widget in app.query("Input, Select, Checkbox"):
+            for widget in app.screen.query("Input, Select, Checkbox"):
                 self.assertTrue(widget.tooltip, widget.id)
-            checkbox = app.query_one("#no_patterns", Checkbox)
+            checkbox = app.screen.query_one("#no_patterns", Checkbox)
             self.assertIn("hypotheses", checkbox.tooltip)
-            app.query_one("#model", Input).value = "qwen"
-            app.query_one("#history_user", Input).value = "reviewer"
+            app.screen.query_one("#model", Input).value = "qwen"
+            app.screen.query_one("#history_user", Input).value = "reviewer"
             password.value = " secret "
             await pilot.click("#save")
             await pilot.pause()
@@ -362,9 +418,9 @@ class ConfigurationInterfaceTest(unittest.IsolatedAsyncioTestCase):
     async def test_settings_actions_stay_visible_in_small_terminal(self):
         app = ConfigurationApp(parse_args([]))
         async with app.run_test(size=(80, 24)) as pilot:
-            viewport = app.query_one("#settings", VerticalScroll)
+            viewport = app.screen.query_one("#settings", VerticalScroll)
             self.assertGreater(viewport.max_scroll_y, 0)
-            save = app.query_one("#save", Button)
+            save = app.screen.query_one("#save", Button)
             self.assertGreaterEqual(save.region.y, 0)
             self.assertLessEqual(save.region.bottom, 24)
             viewport.scroll_end(animate=False, immediate=True)
@@ -377,8 +433,8 @@ class ConfigurationInterfaceTest(unittest.IsolatedAsyncioTestCase):
         args = parse_args(["--prompt", "Review this warning", "--plain"])
         app = ConfigurationApp(args)
         async with app.run_test(size=(100, 45)) as pilot:
-            app.query_one("#model", Input).value = "qwen-local"
-            app.query_one(
+            app.screen.query_one("#model", Input).value = "qwen-local"
+            app.screen.query_one(
                 "#model_url", Input
             ).value = "http://localhost:8000/v1"
             await pilot.click("#save")
@@ -391,11 +447,12 @@ class ConfigurationInterfaceTest(unittest.IsolatedAsyncioTestCase):
     async def test_invalid_form_stays_open_and_cancel_does_not_write(self):
         app = ConfigurationApp(parse_args([]))
         async with app.run_test(size=(100, 45)) as pilot:
-            app.query_one("#model_url", Input).value = "invalid-url"
+            app.screen.query_one("#model_url", Input).value = "invalid-url"
             await pilot.click("#save")
             await pilot.pause()
             self.assertIn(
-                "HTTP(S)", str(app.query_one("#settings-error").render())
+                "HTTP(S)",
+                str(app.screen.query_one("#settings-error").render()),
             )
             self.assertFalse(self.path.exists())
             await pilot.press("escape")
@@ -405,16 +462,19 @@ class ConfigurationInterfaceTest(unittest.IsolatedAsyncioTestCase):
     async def test_provider_placeholders_and_required_remote_model(self):
         app = ConfigurationApp(parse_args([]))
         async with app.run_test(size=(100, 45)) as pilot:
-            app.query_one("#provider", Select).value = "deepseek"
+            app.screen.query_one("#provider", Select).value = "deepseek"
             await pilot.pause()
             self.assertEqual(
-                app.query_one("#model_key_env", Input).placeholder,
+                app.screen.query_one("#model_key_env", Input).placeholder,
                 "DEEPSEEK_API_KEY",
             )
-            self.assertEqual(app.query_one("#model_url", Input).value, "")
+            self.assertEqual(
+                app.screen.query_one("#model_url", Input).value, ""
+            )
             await pilot.click("#save")
             await pilot.pause()
             self.assertIn(
-                "model ID", str(app.query_one("#settings-error").render())
+                "model ID",
+                str(app.screen.query_one("#settings-error").render()),
             )
             self.assertFalse(self.path.exists())

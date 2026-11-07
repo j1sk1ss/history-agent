@@ -353,9 +353,13 @@ def main(argv=None):
                     args.prompt = args.batch = args.diff = None
                     args.subset = args.base_project = args.base_branch = None
                 continue
-            if result != "configure":
+            if isinstance(result, dict) and "settings" in result:
+                args = result["settings"]
+                configure = False
+            elif result == "configure":
+                configure = True
+            else:
                 return
-            configure = True
             # Reopening settings starts a chat; do not replay a completed CLI
             # job.
             args.prompt = args.batch = args.diff = args.resume = None
