@@ -14,6 +14,7 @@ from history_agent.history.client import HistoryClient, Settings
 from history_agent.inference.model import ChatError
 from history_agent.interfaces.chat import Harness
 from history_agent.interfaces.mcp import create_server
+from history_agent.review import patterns
 from history_agent.review.batch import BatchRunner
 from history_agent.review.client import ItemClient
 from history_agent.review.journal import Journal
@@ -295,19 +296,21 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
                 journal = Journal(self.root, result["job_id"])
                 try:
                     self.assertEqual(
-                        journal.db.execute(
-                            "SELECT COUNT(*) FROM checker_cache"
-                        ).fetchone()[0],
+                        sum(
+                            journal.cached_checker(checker) is not None
+                            for checker in ("A_CHECKER", "B_CHECKER")
+                        ),
                         2,
                     )
                     self.assertEqual(
                         journal.path.stat().st_mode & 0o777, 0o600
                     )
                     self.assertNotIn(
-                        "test-secret", "".join(journal.db.iterdump())
+                        "test-secret",
+                        journal.path.read_bytes().decode(errors="ignore"),
                     )
                 finally:
-                    journal.db.close()
+                    journal.close()
 
     async def test_resume_restores_goal_without_old_context(
         self,
@@ -559,14 +562,12 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(server.reviews["a1"]["classification_id"], 2)
                 journal = Journal(self.root, result["job_id"])
                 try:
-                    rows = journal.db.execute(
-                        "SELECT classification,value FROM checker_patterns"
-                    ).fetchall()
+                    rows = patterns.recall(journal, "A_CHECKER")
                     self.assertEqual(len(rows), 1)
                     self.assertEqual(rows[0]["classification"], "WF")
-                    self.assertIn("intentional-fixture", rows[0]["value"])
+                    self.assertIn("intentional-fixture", json.dumps(rows[0]))
                 finally:
-                    journal.db.close()
+                    journal.close()
                 request = json.dumps(model.requests[0])
                 self.assertIn(
                     "WF does not mean the detector is wrong", request
@@ -642,9 +643,7 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
                     journal.set("scope", SCOPE)
                     await runner.enumerate(journal)
                     self.assertEqual(
-                        journal.db.execute(
-                            "SELECT COUNT(*) FROM items"
-                        ).fetchone()[0],
+                        len(journal.items()),
                         101,
                     )
                     self.assertTrue(journal.get("queue_complete"))
@@ -656,7 +655,7 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(pages, ["0", "100"])
                     self.assertFalse(server.writes)
                 finally:
-                    journal.db.close()
+                    journal.close()
 
     async def test_item_client_restricts_scope_and_router_adds_no_model_tools(
         self,
@@ -719,8 +718,8 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
                     with second.lock():
                         pass
         finally:
-            first.db.close()
-            second.db.close()
+            first.close()
+            second.close()
 
     async def test_cli_resume_keeps_context_small_without_reapplying(
         self,

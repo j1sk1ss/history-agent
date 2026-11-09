@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-import json
 import os
 import re
-import sqlite3
 from collections.abc import Iterator
-from contextlib import closing, contextmanager
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+
+from sqlalchemy.exc import SQLAlchemyError
+
+from history_agent.review.storage.checkpoint import CheckpointStore
 
 FINISHED_ITEM_STATES: tuple[str, ...] = (
     "saved",
@@ -85,15 +87,17 @@ def unfinished_jobs(root: Path) -> list[UnfinishedJob]:
         if not re.fullmatch(r"[a-f0-9]{32}", path.stem):
             continue
         try:
-            uri: str = path.resolve().as_uri() + "?mode=ro"
-            with closing(sqlite3.connect(uri, uri=True, timeout=0.1)) as db:
-                metadata: dict[str, object] = {
-                    key: json.loads(value)
-                    for key, value in db.execute(
-                        "SELECT key,value FROM metadata WHERE key IN "
-                        "('format','scope','model','write','queue_complete')"
+            store: CheckpointStore = CheckpointStore(path, read_only=True)
+            try:
+                metadata: dict[str, object] = store.metadata(
+                    (
+                        "format",
+                        "scope",
+                        "model",
+                        "write",
+                        "queue_complete",
                     )
-                }
+                )
                 scope: dict[str, str | int] = metadata["scope"]
                 if metadata.get("format") != 1 or not isinstance(scope, dict):
                     continue
@@ -102,11 +106,9 @@ def unfinished_jobs(root: Path) -> list[UnfinishedJob]:
                     for key in ("project_id", "stream_id", "snapshot_id")
                 ):
                     continue
-                states: dict[str, int] = dict(
-                    db.execute(
-                        "SELECT state,COUNT(*) FROM items GROUP BY state"
-                    )
-                )
+                states: dict[str, int] = store.state_counts()
+            finally:
+                store.close()
             total: int = sum(states.values())
             done: int = sum(
                 states.get(state, 0) for state in FINISHED_ITEM_STATES
@@ -129,7 +131,7 @@ def unfinished_jobs(root: Path) -> list[UnfinishedJob]:
                     modified=path.stat().st_mtime,
                 )
             )
-        except (OSError, sqlite3.Error, ValueError, TypeError, KeyError):
+        except (OSError, SQLAlchemyError, ValueError, TypeError, KeyError):
             # A damaged or partially initialized job must not block startup.
             continue
     return sorted(

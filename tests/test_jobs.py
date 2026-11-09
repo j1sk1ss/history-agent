@@ -11,6 +11,7 @@ from history_agent.review.jobs import (
     unfinished_jobs,
 )
 from history_agent.review.journal import Journal
+from history_agent.review.storage.models import ReviewItem
 
 
 def checkpoint(root, states, *, queue_complete=True, **metadata):
@@ -30,17 +31,21 @@ def checkpoint(root, states, *, queue_complete=True, **metadata):
         }
         for key, value in values.items():
             job.set(key, value)
-        with job.db:
-            for index, state in enumerate(states):
-                job.db.execute(
-                    "INSERT INTO items "
-                    "(warning_id,checker,ordinal,warning,state) "
-                    "VALUES(?,?,?,?,?)",
-                    (str(index), "CHECKER", index, "{}", state),
+        job.add_items(
+            [
+                ReviewItem(
+                    warning_id=str(index),
+                    checker="CHECKER",
+                    ordinal=index,
+                    warning={},
+                    state=state,
                 )
+                for index, state in enumerate(states)
+            ]
+        )
         return job.path
     finally:
-        job.db.close()
+        job.close()
 
 
 class UnfinishedJobsTest(unittest.TestCase):
@@ -107,7 +112,7 @@ class UnfinishedJobsTest(unittest.TestCase):
         checkpoint(self.root, ["pending"], scope=None)
         checkpoint(self.root, ["pending"], format=999)
         journal = Journal(self.root)
-        journal.db.close()
+        journal.close()
         (self.root / ("f" * 32 + ".sqlite3")).write_text("damaged database")
         (self.root / "not-a-job.sqlite3").write_text("not a job")
         self.assertEqual(
@@ -167,4 +172,4 @@ class UnfinishedJobsTest(unittest.TestCase):
                 with job.lock():
                     self.fail("Deleted checkpoint was allowed to run")
         finally:
-            job.db.close()
+            job.close()

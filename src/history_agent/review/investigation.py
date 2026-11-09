@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import Callable
-from sqlite3 import Row
 
 from mcp import Client
 
@@ -14,22 +12,24 @@ from history_agent.inference.model import ChatError, compact
 from history_agent.review import patterns, prompts
 from history_agent.review.client import ItemClient
 from history_agent.review.journal import Journal
+from history_agent.review.models import ReviewVerdict
 from history_agent.review.response import VerdictResponse
 from history_agent.review.schemas import RESULT_SCHEMA
+from history_agent.review.storage.models import ReviewItem
 from history_agent.runtime.agent import Harness
 from history_agent.runtime.messages import tool_exchange
 
 
 class Investigation:
     def __init__(
-        self, history: HistoryClient, client: Client, job: Journal, row: Row,
-        baseline: dict[str, object],
+        self, history: HistoryClient, client: Client, job: Journal,
+        row: ReviewItem, baseline: dict[str, object],
         reviewer_factory: Callable[[ItemClient], Harness],
         on_event: Callable[..., None], *, reuse_patterns: bool,
     ) -> None:
         self.history: HistoryClient = history
         self.job: Journal = job
-        self.row: Row = row
+        self.row: ReviewItem = row
         self.baseline: dict[str, object] = baseline
         self.reviewer_factory: Callable[[ItemClient], Harness] = (
             reviewer_factory
@@ -37,9 +37,9 @@ class Investigation:
         self.on_event: Callable[..., None] = on_event
         self.reuse_patterns: bool = reuse_patterns
         self.scope: dict[str, str | int] = job.get("scope")
-        self.warning: dict[str, object] = json.loads(row["warning"])
+        self.warning: dict[str, object] = row.warning
         self.client: ItemClient = ItemClient(
-            client, {**self.scope, "checker_name": row["checker"]}, set()
+            client, {**self.scope, "checker_name": row.checker}, set()
         )
 
     async def read(
@@ -47,7 +47,7 @@ class Investigation:
     ) -> dict[str, object]:
         return await asyncio.to_thread(self.history.execute, action, arguments)
 
-    async def run(self) -> dict[str, object]:
+    async def run(self) -> ReviewVerdict:
         checker: dict[str, object] = await self.checker_documentation()
         self.allow_comparison_snapshots()
         reviewer: Harness = self.reviewer_factory(self.client)
@@ -80,13 +80,12 @@ class Investigation:
         return await response.resolve(raw, original_raw)
 
     async def checker_documentation(self) -> dict[str, object]:
-        cached: Row | None = self.job.db.execute(
-            "SELECT value FROM checker_cache WHERE checker=?",
-            (self.row["checker"],),
-        ).fetchone()
-        if cached:
-            return json.loads(cached[0])
-        arguments: dict[str, str] = {"checker_name": self.row["checker"]}
+        cached: dict[str, object] | None = self.job.cached_checker(
+            self.row.checker
+        )
+        if cached is not None:
+            return cached
+        arguments: dict[str, str] = {"checker_name": self.row.checker}
         try:
             result: dict[str, object] = await self.read(
                 "agent_checker_info", arguments
@@ -104,11 +103,7 @@ class Investigation:
                     "status": "unavailable",
                     "error": str(doc_error),
                 }
-        with self.job.db:
-            self.job.db.execute(
-                "INSERT INTO checker_cache VALUES(?,?)",
-                (self.row["checker"], compact(result)),
-            )
+        self.job.cache_checker(self.row.checker, result)
         return result
 
     def allow_comparison_snapshots(self) -> None:
@@ -128,18 +123,15 @@ class Investigation:
     ) -> None:
         detail_args: dict[str, object] = {
             **self.scope,
-            "warning_id": self.row["warning_id"],
+            "warning_id": self.row.warning_id,
         }
         detail: dict[str, object] = await self.read("get_warning", detail_args)
-        if (
-            detail.get("warning", {}).get("warning_id")
-            != self.row["warning_id"]
-        ):
+        if detail.get("warning", {}).get("warning_id") != self.row.warning_id:
             raise ChatError("Snapshot warning identity mismatch")
         packets: list[tuple[str, dict[str, object], dict[str, object]]] = [
             (
                 "agent_checker_info",
-                {"checker_name": self.row["checker"]},
+                {"checker_name": self.row.checker},
                 checker,
             ),
             (
@@ -228,7 +220,7 @@ class Investigation:
         pending: object = self.job.get("pending_response")
         if (
             isinstance(pending, dict)
-            and pending.get("warning_id") == self.row["warning_id"]
+            and pending.get("warning_id") == self.row.warning_id
             and pending.get("baseline") == self.baseline
         ):
             return pending
@@ -243,7 +235,7 @@ class Investigation:
         if comparison:
             prompt += prompts.COMPARISON.format(comparison=compact(comparison))
         hints: list[dict[str, str | list[str]]] = (
-            patterns.recall(self.job.db, self.row["checker"])
+            patterns.recall(self.job, self.row.checker)
             if self.reuse_patterns
             else []
         )
@@ -252,7 +244,7 @@ class Investigation:
             self.on_event(
                 "batch_patterns",
                 count=len(hints),
-                checker=self.row["checker"],
+                checker=self.row.checker,
                 patterns=hints,
             )
         if pending and pending.get("retry_investigation"):

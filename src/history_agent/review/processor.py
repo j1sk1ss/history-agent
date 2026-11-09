@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
-import json
 from collections.abc import Awaitable, Callable
-from sqlite3 import Row
 
 from history_agent.history.client import HistoryClient
 from history_agent.inference.model import ChatError
@@ -15,6 +13,8 @@ from history_agent.review.classification import STATUSES
 from history_agent.review.comments import review_comment
 from history_agent.review.jobs import FINISHED_ITEM_STATES
 from history_agent.review.journal import Journal
+from history_agent.review.models import ReviewVerdict
+from history_agent.review.storage.models import ReviewItem
 
 
 class ItemProcessor:
@@ -22,7 +22,8 @@ class ItemProcessor:
         self,
         history: HistoryClient,
         investigate: Callable[
-            [Journal, Row, dict[str, object]], Awaitable[dict[str, object]]
+            [Journal, ReviewItem, dict[str, object]],
+            Awaitable[ReviewVerdict],
         ],
         on_event: Callable[..., None],
         *,
@@ -30,7 +31,8 @@ class ItemProcessor:
     ) -> None:
         self.history: HistoryClient = history
         self.investigate: Callable[
-            [Journal, Row, dict[str, object]], Awaitable[dict[str, object]]
+            [Journal, ReviewItem, dict[str, object]],
+            Awaitable[ReviewVerdict],
         ] = investigate
         self.on_event: Callable[..., None] = on_event
         self.reuse_patterns: bool = reuse_patterns
@@ -55,21 +57,21 @@ class ItemProcessor:
         return copy.deepcopy(attributes)
 
     async def process(
-        self, job: Journal, row: Row, ids: dict[str, int],
+        self, job: Journal, row: ReviewItem, ids: dict[str, int],
     ) -> None:
         self.progress(job, row)
         current: dict[str, object] = await self.current(
-            job.get("scope"), row["warning_id"]
+            job.get("scope"), row.warning_id
         )
-        if row["state"] in ("saving", "uncertain"):
+        if row.state in ("saving", "uncertain"):
             self.verify_previous_write(job, row, current, ids)
             return
         proposal: (
-            tuple[dict[str, object], dict[str, object]] | None
+            tuple[ReviewVerdict, dict[str, object]] | None
         ) = await self.propose(job, row, current, ids)
         if proposal is None:
             return
-        verdict: dict[str, object]
+        verdict: ReviewVerdict
         baseline: dict[str, object]
         verdict, baseline = proposal
         if job.get("write") and not await self.save(
@@ -78,7 +80,7 @@ class ItemProcessor:
             return
         self.finish(job, row, verdict, saved=bool(job.get("write")))
 
-    def progress(self, job: Journal, row: Row) -> None:
+    def progress(self, job: Journal, row: ReviewItem) -> None:
         summary: dict[str, object] = job.summary()
         completed: int = sum(
             summary["states"].get(state, 0) for state in FINISHED_ITEM_STATES
@@ -88,16 +90,16 @@ class ItemProcessor:
             job_id=job.id,
             done=completed,
             total=summary["total"],
-            checker=row["checker"],
-            warning_id=row["warning_id"],
+            checker=row.checker,
+            warning_id=row.warning_id,
         )
 
     def verify_previous_write(
-        self, job: Journal, row: Row, current: dict[str, object],
+        self, job: Journal, row: ReviewItem, current: dict[str, object],
         ids: dict[str, int],
     ) -> None:
-        if matches(current, json.loads(row["verdict"]), ids):
-            job.update(row["warning_id"], "saved")
+        if matches(current, ReviewVerdict.model_validate(row.verdict), ids):
+            job.update(row.warning_id, "saved")
             return
         raise ChatError(
             "A previous write has an uncertain outcome; inspect review "
@@ -105,38 +107,42 @@ class ItemProcessor:
         )
 
     async def propose(
-        self, job: Journal, row: Row, current: dict[str, object],
+        self, job: Journal, row: ReviewItem, current: dict[str, object],
         ids: dict[str, int],
-    ) -> tuple[dict[str, object], dict[str, object]] | None:
-        if row["state"] == "proposed":
-            verdict: dict[str, object] = json.loads(row["verdict"])
-            baseline: dict[str, object] = json.loads(row["baseline"])
-            verdict["comment"] = review_comment(
-                verdict["comment"], verdict["evidence"]
+    ) -> tuple[ReviewVerdict, dict[str, object]] | None:
+        if row.state == "proposed":
+            verdict: ReviewVerdict = ReviewVerdict.model_validate(row.verdict)
+            baseline: dict[str, object] = row.baseline
+            verdict.comment = review_comment(
+                verdict.comment,
+                [address.model_dump() for address in verdict.evidence],
             )
         else:
             reviewed: bool = current["classification_id"] != ids[
                 STATUSES["UD"]
             ] or bool(current.get("comment"))
             if not job.get("overwrite") and reviewed:
-                job.update(row["warning_id"], "skipped")
+                job.update(row.warning_id, "skipped")
                 return None
             baseline = current
-            job.update(row["warning_id"], "analyzing", baseline=baseline)
+            job.update(row.warning_id, "analyzing", baseline=baseline)
             verdict = await self.investigate(job, row, baseline)
         job.update(
-            row["warning_id"], "proposed", verdict=verdict, baseline=baseline
+            row.warning_id,
+            "proposed",
+            verdict=verdict.model_dump(exclude_none=True),
+            baseline=baseline,
         )
-        if row["state"] != "proposed":
+        if row.state != "proposed":
             job.set("pending_response", None)
         return verdict, baseline
 
     async def save(
-        self, job: Journal, row: Row, verdict: dict[str, object],
+        self, job: Journal, row: ReviewItem, verdict: ReviewVerdict,
         baseline: dict[str, object], ids: dict[str, int],
     ) -> bool:
         scope: dict[str, str | int] = job.get("scope")
-        warning_id: str = row["warning_id"]
+        warning_id: str = row.warning_id
         if await self.current(scope, warning_id) != baseline:
             job.update(warning_id, "conflict")
             return False
@@ -149,8 +155,8 @@ class ItemProcessor:
                     "project_id": scope["project_id"],
                     "stream_id": scope["stream_id"],
                     "warning_id": warning_id,
-                    "classification": verdict["classification"],
-                    "comment": verdict["comment"],
+                    "classification": verdict.classification,
+                    "comment": verdict.comment,
                 },
                 write=True,
             )
@@ -164,27 +170,26 @@ class ItemProcessor:
         return True
 
     def finish(
-        self, job: Journal, row: Row, verdict: dict[str, object], *,
+        self, job: Journal, row: ReviewItem, verdict: ReviewVerdict, *,
         saved: bool,
     ) -> None:
-        job.update(row["warning_id"], "saved" if saved else "reviewed")
+        job.update(row.warning_id, "saved" if saved else "reviewed")
         if self.reuse_patterns:
-            patterns.learn(job.db, row["checker"], verdict)
+            patterns.learn(job, row.checker, verdict)
         self.on_event(
             "batch_verdict",
-            warning_id=row["warning_id"],
-            classification=verdict["classification"],
-            comment=verdict["comment"],
+            warning_id=row.warning_id,
+            classification=verdict.classification,
+            comment=verdict.comment,
             saved=saved,
         )
 
 
 def matches(
-    current: dict[str, object], verdict: dict[str, object],
-    ids: dict[str, int],
+    current: dict[str, object], verdict: ReviewVerdict, ids: dict[str, int],
 ) -> bool:
     return (
         current.get("classification_id")
-        == ids[STATUSES[verdict["classification"]]]
-        and current.get("comment") == verdict["comment"]
+        == ids[STATUSES[verdict.classification]]
+        and current.get("comment") == verdict.comment
     )

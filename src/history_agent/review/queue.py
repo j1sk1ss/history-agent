@@ -3,8 +3,9 @@
 from collections.abc import Awaitable, Callable
 
 from history_agent.history.schemas import COMPARE_ACTION
-from history_agent.inference.model import ChatError, compact
+from history_agent.inference.model import ChatError
 from history_agent.review.journal import Journal
+from history_agent.review.storage.models import ReviewItem
 
 
 class ReviewQueue:
@@ -19,8 +20,7 @@ class ReviewQueue:
         self.on_event: Callable[..., None] = on_event
 
     async def collect(self, job: Journal) -> None:
-        with job.db:
-            job.db.execute("DELETE FROM items")
+        job.clear_items()
         if job.get("comparison"):
             await self.collect_difference(job)
         else:
@@ -108,22 +108,24 @@ class ReviewQueue:
         self, job: Journal, warnings: list[dict[str, object]], ordinal: int,
         checker: str | None,
     ) -> int:
-        with job.db:
-            for warning in warnings:
-                name: str = warning.get("checker_name", "")
-                if not isinstance(name, str) or not name:
-                    raise ChatError("Comparison warning has no checker name")
-                expected: str | None = checker or job.get("checker_name")
-                if expected and name.casefold() != expected.casefold():
-                    raise ChatError(
-                        "Warning page returned a different checker"
-                    )
-                job.db.execute(
-                    "INSERT INTO items(warning_id,checker,ordinal,warning) "
-                    "VALUES(?,?,?,?)",
-                    (warning["warning_id"], name, ordinal, compact(warning)),
+        items: list[ReviewItem] = []
+        for warning in warnings:
+            name: str = warning.get("checker_name", "")
+            if not isinstance(name, str) or not name:
+                raise ChatError("Comparison warning has no checker name")
+            expected: str | None = checker or job.get("checker_name")
+            if expected and name.casefold() != expected.casefold():
+                raise ChatError("Warning page returned a different checker")
+            items.append(
+                ReviewItem(
+                    warning_id=warning["warning_id"],
+                    checker=name,
+                    ordinal=ordinal,
+                    warning=warning,
                 )
-                ordinal += 1
+            )
+            ordinal += 1
+        job.add_items(items)
         return ordinal
 
     def verify_comparison(self, job: Journal, page: dict[str, object]) -> None:

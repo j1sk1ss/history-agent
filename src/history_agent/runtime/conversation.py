@@ -205,7 +205,7 @@ class Conversation:
                 try:
                     write = write or journal.get("write")
                 finally:
-                    journal.db.close()
+                    journal.close()
             summary = await self.runner.run(arguments, write=write)
             self.retain_summary(summary)
             text: str = compact(

@@ -3,8 +3,7 @@
 import copy
 
 from history_agent.history.schemas import COMPARE_SCHEMA
-from history_agent.review.classification import REVIEW_CRITERIA, STATUSES
-from history_agent.review.patterns import PATTERN_SCHEMA
+from history_agent.review.models import ReviewVerdict
 
 BATCH_ACTION: str = "review_batch"
 BATCH_SCHEMA: dict[str, object] = {
@@ -74,43 +73,4 @@ DIFF_META: dict[str, object] = {
     "including when called through history_read. "
     "Resume with only job_id.",
 }
-RESULT_SCHEMA: dict[str, object] = {
-    "type": "object",
-    "additionalProperties": False,
-    "required": ["classification", "comment", "evidence"],
-    "properties": {
-        "classification": {
-            "type": "string",
-            "enum": list(STATUSES),
-            "description": REVIEW_CRITERIA,
-        },
-        "comment": {"type": "string", "minLength": 1, "maxLength": 8000},
-        "evidence": {
-            "type": "array",
-            "maxItems": 20,
-            "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "required": ["file", "line", "snapshot_id"],
-                "properties": {
-                    "file": {"type": "string", "minLength": 1},
-                    "line": {"type": "integer", "minimum": 1},
-                    "snapshot_id": {"type": "string", "minLength": 1},
-                },
-            },
-        },
-    },
-}
-RESULT_SCHEMA["properties"]["pattern"] = PATTERN_SCHEMA
-RESULT_SCHEMA["properties"]["evidence"]["items"]["properties"]["file"][
-    "description"
-] = (
-    "Exact source file address read via agent_source. Only "
-    "comment uses short paths."
-)
-RESULT_SCHEMA["properties"]["evidence"]["items"]["properties"]["snapshot_id"][
-    "description"
-] = (
-    "Concrete snapshot of the source that was actually read; "
-    "required here, omitted from comment."
-)
+RESULT_SCHEMA: dict[str, object] = ReviewVerdict.model_json_schema()

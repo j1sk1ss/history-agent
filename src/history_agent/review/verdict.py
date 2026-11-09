@@ -8,8 +8,6 @@ from __future__ import annotations
 import copy
 import json
 
-from jsonschema import Draft202012Validator
-
 from history_agent.inference.model import ChatError
 from history_agent.review.comments import short_path
 
@@ -61,24 +59,6 @@ def normalize_verdict(
             result.pop(key)
     normalize_evidence(result, observed)
     return result
-
-
-def schema_issues(
-    value: dict[str, object], validator: Draft202012Validator,
-) -> list[str]:
-    issues: list[str] = []
-    for error in validator.iter_errors(value):
-        path: str = ".".join(map(str, error.absolute_path)) or "verdict"
-        issues.append(path + ": " + error.message[:300])
-        if len(issues) == 5:
-            break
-    if (
-        not issues
-        and isinstance(value.get("comment"), str)
-        and (not value["comment"].strip())
-    ):
-        issues.append("comment: explanation must not be blank")
-    return issues
 
 
 def unique_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:

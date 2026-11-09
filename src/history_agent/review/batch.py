@@ -3,24 +3,26 @@
 from __future__ import annotations
 
 import asyncio
-import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
 from mcp import Client
+from sqlalchemy.exc import SQLAlchemyError
 
 from history_agent.history.client import HistoryClient, HistoryError
 from history_agent.history.comparison import scopes
-from history_agent.inference.model import ChatError, compact
+from history_agent.inference.model import ChatError
 from history_agent.review.classification import STATUSES
 from history_agent.review.client import ItemClient
 from history_agent.review.investigation import Investigation
 from history_agent.review.jobs import FINISHED_ITEM_STATES
 from history_agent.review.journal import Journal
+from history_agent.review.models import ReviewVerdict
 from history_agent.review.processor import ItemProcessor
 from history_agent.review.queue import ReviewQueue
 from history_agent.review.schemas import BATCH_SCHEMA
+from history_agent.review.storage.models import ReviewItem
 from history_agent.runtime.agent import Harness
 
 
@@ -70,13 +72,13 @@ class BatchRunner:
                 self.last_summary = job.summary()
                 self.on_event("batch_finished", summary=self.last_summary)
                 return self.last_summary
-        except (ChatError, HistoryError, OSError, sqlite3.Error) as error:
+        except (ChatError, HistoryError, OSError, SQLAlchemyError) as error:
             raise ChatError(
                 f"Batch stopped; job_id={job.id}. {error}"
             ) from None
         finally:
             self.last_summary = job.summary()
-            job.db.close()
+            job.close()
 
     def validate_request(self, args: dict[str, object], write: bool) -> None:
         if not Draft202012Validator(BATCH_SCHEMA).is_valid(args):
@@ -139,14 +141,7 @@ class BatchRunner:
                 raise ChatError(
                     "This job saves reviews; enable live saving to resume it"
                 )
-            with job.db:
-                job.db.execute(
-                    "UPDATE items SET state='proposed' WHERE state='reviewed'"
-                )
-                job.db.execute(
-                    "INSERT OR REPLACE INTO metadata VALUES(?,?)",
-                    ("write", compact(True)),
-                )
+            job.enable_writes()
         if job.get("overwrite") and not self.allow_overwrite:
             raise ChatError("This checkpoint requires --overwrite-reviews")
 
@@ -163,12 +158,9 @@ class BatchRunner:
         }
         if not set(STATUSES.values()) <= set(ids):
             raise ChatError("History classification catalog is incomplete")
-        placeholders: str = ",".join("?" for _ in FINISHED_ITEM_STATES)
-        rows: list[sqlite3.Row] = job.db.execute(
-            f"SELECT * FROM items WHERE state NOT IN ({placeholders}) "
-            "ORDER BY checker COLLATE NOCASE,ordinal",
-            FINISHED_ITEM_STATES,
-        ).fetchall()
+        rows: list[ReviewItem] = job.items(
+            excluded_states=FINISHED_ITEM_STATES
+        )
         processor: ItemProcessor = ItemProcessor(
             self.history,
             self.investigate,
@@ -182,8 +174,8 @@ class BatchRunner:
         await ReviewQueue(self.read, self.on_event).collect(job)
 
     async def investigate(
-        self, job: Journal, row: sqlite3.Row, baseline: dict[str, object],
-    ) -> dict[str, object]:
+        self, job: Journal, row: ReviewItem, baseline: dict[str, object],
+    ) -> ReviewVerdict:
         investigation: Investigation = Investigation(
             self.history,
             self.client,
