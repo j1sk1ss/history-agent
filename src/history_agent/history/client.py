@@ -21,11 +21,28 @@ from http.client import HTTPResponse
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
-from .comments import review_comment
-from .comparison import COMPARE_ACTION, COMPARE_META, legacy_compare
-from .current import CURRENT_ACTION, CURRENT_META, resolve_current
-from .guide import DOC_ACTION, DOC_METADATA, Guide, GuideError
-from .links import URL_ACTION, URL_META, resolve_history_url
+from history_agent.history.comparison import (
+    COMPARE_ACTION,
+    COMPARE_META,
+    legacy_compare,
+)
+from history_agent.history.current import (
+    CURRENT_ACTION,
+    CURRENT_META,
+    resolve_current,
+)
+from history_agent.history.guide import (
+    DOC_ACTION,
+    DOC_METADATA,
+    Guide,
+    GuideError,
+)
+from history_agent.history.links import (
+    URL_ACTION,
+    URL_META,
+    resolve_history_url,
+)
+from history_agent.review.comments import review_comment
 
 READ_ACTIONS: frozenset[str] = frozenset(
     {

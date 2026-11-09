@@ -6,7 +6,7 @@ separately and always takes precedence over this fallback.
 
 from __future__ import annotations
 
-from . import client as history_client
+from history_agent.history import client as history_client
 
 CURRENT_ACTION: str = "current"
 CURRENT_META: dict[str, object] = {

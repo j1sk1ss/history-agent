@@ -11,13 +11,13 @@ from functools import partial
 from mcp import Client
 from mcp.types import Tool
 
-from .agent import BATCH_HINT, Harness
-from .batch import ItemClient
-from .client import HistoryClient, HistoryError
-from .links import URL_ACTION, find_history_urls
-from .model import ChatError, Model, compact
-from .terminal import TerminalUI
-from .ui.bridge import UIAdapter
+from history_agent.history.client import HistoryClient, HistoryError
+from history_agent.history.links import URL_ACTION, find_history_urls
+from history_agent.inference.model import ChatError, Model, compact
+from history_agent.review.batch import ItemClient
+from history_agent.runtime.agent import BATCH_HINT, Harness
+from history_agent.ui.bridge import UIAdapter
+from history_agent.ui.terminal import TerminalUI
 
 
 def pretty_json_text(value: str) -> str:
@@ -35,8 +35,8 @@ async def converse(
     client: Client, model: Model, args: Namespace, history: HistoryClient, *,
     ui_override: TerminalUI | UIAdapter | None = None,
 ) -> None:
-    from .batch import BatchRouter, BatchRunner, Journal
-    from .commands import HELP, install_completion
+    from history_agent.review.batch import BatchRouter, BatchRunner, Journal
+    from history_agent.runtime.commands import HELP, install_completion
 
     use_ui: bool = (
         args.ui

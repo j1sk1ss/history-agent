@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 from urllib.parse import SplitResult, unquote, urlsplit
 
-from . import client as history_client
+from history_agent.history import client as history_client
 
 URL_ACTION: str = "agent_resolve_history_url"
 URL_META: dict[str, object] = {

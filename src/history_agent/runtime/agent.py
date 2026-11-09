@@ -10,10 +10,10 @@ from collections.abc import Callable, Sequence
 from mcp import Client
 from mcp.types import CallToolResult, Tool
 
-from . import batch
-from .classification import CORE_CRITERIA
-from .model import ChatError, Model, compact
-from .verdict import FINAL_TOOL
+from history_agent.inference.model import ChatError, Model, compact
+from history_agent.review import batch
+from history_agent.review.classification import CORE_CRITERIA
+from history_agent.review.verdict import FINAL_TOOL
 
 SYSTEM: str = (
     "Review Svace warnings with history tools. Follow these steps:\n"

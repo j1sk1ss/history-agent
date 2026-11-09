@@ -10,8 +10,8 @@ from textual.binding import Binding
 from textual.containers import Vertical
 from textual.widgets import Collapsible, Input, Static
 
-from ..commands import COMMANDS
-from ..terminal import safe_text
+from history_agent.runtime.commands import COMMANDS
+from history_agent.ui.terminal import safe_text
 
 
 class DetailCard(Vertical):

@@ -1,6 +1,6 @@
 import unittest
 
-from history_agent.classification import (
+from history_agent.review.classification import (
     EVIDENCE_REQUIRED,
     PATTERN_CLASSES,
     REVIEW_CRITERIA,

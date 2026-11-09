@@ -5,7 +5,7 @@ from collections.abc import Coroutine
 
 from textual.message import Message
 
-from . import app as history_app
+from history_agent.ui import app as history_app
 
 
 class BackendEvent(Message):
@@ -72,7 +72,7 @@ class UIAdapter:
         except asyncio.CancelledError:
             if asyncio.current_task().cancelling():
                 raise
-            from ..model import ChatError
+            from history_agent.inference.model import ChatError
 
             raise ChatError(
                 "Stopped. Use /reload to continue or /reset for a new chat."

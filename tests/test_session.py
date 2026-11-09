@@ -5,11 +5,11 @@ from pathlib import Path
 
 from mcp import Client
 
-from history_agent.cli import parse_args
-from history_agent.client import HistoryClient, Settings
-from history_agent.model import ChatError
-from history_agent.server import create_server
-from history_agent.session import converse
+from history_agent.history.client import HistoryClient, Settings
+from history_agent.inference.model import ChatError
+from history_agent.interfaces.cli import parse_args
+from history_agent.interfaces.mcp import create_server
+from history_agent.runtime.session import converse
 from tests.fake_history import FakeHistory
 from tests.test_batch import ReviewModel, warning
 from tests.test_chat import FakeModel, answer

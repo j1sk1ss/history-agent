@@ -314,7 +314,7 @@ def build_plan(args: argparse.Namespace) -> list[Edit]:
     prepare(args)
     root: Path = args.config_root
     executable: Path = Path(sys.executable)
-    server_script: Path = Path(__file__).resolve().parents[2] / "mcp_server.py"
+    server_script: Path = Path(__file__).resolve().parents[3] / "mcp_server.py"
     history_config: Path = args.install_dir / "history.json"
     stdio: dict[str, object] = {
         "command": str(executable),
@@ -666,7 +666,7 @@ def main(
                 print("Would configure:", edit.path)
             return
         if not (
-            Path(__file__).resolve().parents[2] / "mcp_server.py"
+            Path(__file__).resolve().parents[3] / "mcp_server.py"
         ).is_file():
             raise ValueError(
                 "Keep configure.py, mcp_server.py and src in the same project"

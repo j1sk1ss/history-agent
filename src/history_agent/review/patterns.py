@@ -9,9 +9,9 @@ import json
 import re
 from sqlite3 import Connection, Cursor
 
-from . import batch
-from .classification import PATTERN_CLASSES
-from .model import compact
+from history_agent.inference.model import compact
+from history_agent.review import batch
+from history_agent.review.classification import PATTERN_CLASSES
 
 PATTERN_SCHEMA: dict[str, object] = {
     "type": "object",

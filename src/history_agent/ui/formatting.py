@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from ..terminal import safe_text
+from history_agent.ui.terminal import safe_text
 
 
 def pretty(value: object) -> str:

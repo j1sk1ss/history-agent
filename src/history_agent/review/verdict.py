@@ -10,8 +10,8 @@ import json
 
 from jsonschema import Draft202012Validator
 
-from .comments import short_path
-from .model import ChatError
+from history_agent.inference.model import ChatError
+from history_agent.review.comments import short_path
 
 
 class VerdictFormatError(ChatError):

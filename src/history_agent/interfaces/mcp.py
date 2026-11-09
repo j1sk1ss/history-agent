@@ -10,9 +10,9 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from .client import HistoryClient, HistoryError, Settings
-from .skills_catalog import catalog as skill_catalog
-from .skills_catalog import read_skill
+from history_agent.history.client import HistoryClient, HistoryError, Settings
+from history_agent.skills.catalog import catalog as skill_catalog
+from history_agent.skills.catalog import read_skill
 
 INSTRUCTIONS: str = (
     "Investigate and classify Svace warnings through history. If "

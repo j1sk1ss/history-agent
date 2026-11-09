@@ -10,17 +10,17 @@ from pathlib import Path
 
 from mcp import Client
 
-from history_agent.batch import (
+from history_agent.history.client import HistoryClient, Settings
+from history_agent.inference.model import ChatError
+from history_agent.interfaces.chat import Harness
+from history_agent.interfaces.mcp import create_server
+from history_agent.review.batch import (
     BATCH_ACTION,
     BatchRouter,
     BatchRunner,
     ItemClient,
     Journal,
 )
-from history_agent.chat import Harness
-from history_agent.client import HistoryClient, Settings
-from history_agent.model import ChatError
-from history_agent.server import create_server
 from tests.fake_history import FakeHistory
 from tests.test_chat import answer
 from tests.test_streaming import (
@@ -745,7 +745,7 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
             command = [
                 sys.executable,
                 "-m",
-                "history_agent.chat",
+                "history_agent.interfaces.chat",
                 "--model-url",
                 model_server.url,
                 "--model",
@@ -827,7 +827,7 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
                 [
                     sys.executable,
                     "-m",
-                    "history_agent.chat",
+                    "history_agent.interfaces.chat",
                     "--model-url",
                     model_server.url,
                     "--model",

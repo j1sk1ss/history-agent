@@ -9,8 +9,8 @@ import urllib.request
 
 from mcp import Client, StdioServerParameters
 
-from history_agent.client import HistoryClient, Settings
-from history_agent.server import create_server
+from history_agent.history.client import HistoryClient, Settings
+from history_agent.interfaces.mcp import create_server
 from tests.fake_history import FakeHistory
 from tests.test_client import SOURCE
 
@@ -68,7 +68,7 @@ class MCPTest(unittest.IsolatedAsyncioTestCase):
     async def test_real_stdio_process_to_http_history(self):
         params = StdioServerParameters(
             command=sys.executable,
-            args=["-m", "history_agent.server"],
+            args=["-m", "history_agent.interfaces.mcp"],
             env={
                 **os.environ,
                 "HISTORY_URL": self.fake.url,
@@ -102,7 +102,7 @@ class MCPTest(unittest.IsolatedAsyncioTestCase):
             [
                 sys.executable,
                 "-m",
-                "history_agent.server",
+                "history_agent.interfaces.mcp",
                 "--transport",
                 "streamable-http",
                 "--port",

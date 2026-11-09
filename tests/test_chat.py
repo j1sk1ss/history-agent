@@ -12,9 +12,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from mcp import Client
 
-from history_agent.chat import ChatError, Harness, Model, model_base
-from history_agent.client import HistoryClient, Settings
-from history_agent.server import create_server
+from history_agent.history.client import HistoryClient, Settings
+from history_agent.interfaces.chat import ChatError, Harness, Model, model_base
+from history_agent.interfaces.mcp import create_server
 from tests.fake_history import FakeHistory
 from tests.test_client import REVIEW, SOURCE
 
@@ -365,7 +365,7 @@ class ModelHTTPTest(unittest.TestCase):
             [
                 sys.executable,
                 "-m",
-                "history_agent.chat",
+                "history_agent.interfaces.chat",
                 "--model-url",
                 self.url,
                 "--history-url",
@@ -398,7 +398,7 @@ class ModelHTTPTest(unittest.TestCase):
             [
                 sys.executable,
                 "-m",
-                "history_agent.chat",
+                "history_agent.interfaces.chat",
                 "--model-url",
                 self.url,
                 "--model",
@@ -436,7 +436,7 @@ class ModelHTTPTest(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "history_agent.chat",
+                    "history_agent.interfaces.chat",
                     "--model-url",
                     self.url,
                     "--history-url",

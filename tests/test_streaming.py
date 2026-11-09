@@ -14,10 +14,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from mcp import Client
 from rich.console import Console
 
-from history_agent.chat import ChatError, Harness, Model
-from history_agent.client import HistoryClient, Settings
-from history_agent.server import create_server
-from history_agent.terminal import TerminalUI, ThinkingText
+from history_agent.history.client import HistoryClient, Settings
+from history_agent.interfaces.chat import ChatError, Harness, Model
+from history_agent.interfaces.mcp import create_server
+from history_agent.ui.terminal import TerminalUI, ThinkingText
 from tests.fake_history import FakeHistory
 from tests.test_client import SOURCE
 
@@ -313,7 +313,7 @@ class StreamTest(unittest.IsolatedAsyncioTestCase):
                 [
                     sys.executable,
                     "-m",
-                    "history_agent.chat",
+                    "history_agent.interfaces.chat",
                     "--model-url",
                     server.url,
                     "--model",
@@ -375,7 +375,7 @@ class StreamTest(unittest.IsolatedAsyncioTestCase):
                 [
                     sys.executable,
                     "-m",
-                    "history_agent.chat",
+                    "history_agent.interfaces.chat",
                     "--model-url",
                     server.url,
                     "--model",

@@ -7,8 +7,8 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Static
 
-from ..jobs import UnfinishedJob
-from ..terminal import safe_text
+from history_agent.review.jobs import UnfinishedJob
+from history_agent.ui.terminal import safe_text
 
 
 class UnfinishedJobs(Vertical):

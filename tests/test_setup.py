@@ -9,8 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from history_agent.client import Settings
-from history_agent.setup import (
+from history_agent.configuration.setup import (
     CLIENTS,
     Edit,
     build_plan,
@@ -20,6 +19,7 @@ from history_agent.setup import (
     read_data,
     write_plan,
 )
+from history_agent.history.client import Settings
 
 
 class SetupTest(unittest.TestCase):

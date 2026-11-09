@@ -22,8 +22,7 @@ from textual.widgets import (
 )
 from textual.widgets.select import NoSelection
 
-from ..client import Settings
-from ..config import (
+from history_agent.configuration.defaults import (
     BOOL_FIELDS,
     LIMIT_FIELDS,
     LOCAL_PROVIDERS,
@@ -34,7 +33,8 @@ from ..config import (
     save_defaults,
     validate_defaults,
 )
-from .settings_help import SETTINGS_HELP
+from history_agent.history.client import Settings
+from history_agent.ui.settings_help import SETTINGS_HELP
 
 
 class ConfigurationScreen(ModalScreen):
@@ -191,7 +191,7 @@ class ConfigurationScreen(ModalScreen):
                 args.provider in (*LOCAL_PROVIDERS, "deepseek")
                 and args.model_url
             ):
-                from ..cli import model_base
+                from history_agent.interfaces.cli import model_base
 
                 model_base(args.model_url)
             if args.overwrite_reviews and not args.allow_write:

@@ -10,8 +10,7 @@ from pathlib import Path
 
 from mcp import Client
 
-from .client import HistoryClient, Settings
-from .config import (
+from history_agent.configuration.defaults import (
     LIMIT_FIELDS,
     LOCAL_PROVIDERS,
     PROVIDER_DEFAULTS,
@@ -20,10 +19,11 @@ from .config import (
     load_defaults,
     validate_defaults,
 )
-from .model import ChatError, Model
-from .server import create_server
-from .session import converse
-from .setup import discover_model, valid_url
+from history_agent.configuration.setup import discover_model, valid_url
+from history_agent.history.client import HistoryClient, Settings
+from history_agent.inference.model import ChatError, Model
+from history_agent.interfaces.mcp import create_server
+from history_agent.runtime.session import converse
 
 
 def model_base(url: str) -> str:
@@ -306,7 +306,7 @@ async def run(
             )
             if use_ui and not args.legacy_ui:
                 try:
-                    from .ui import run_tui
+                    from history_agent.ui import run_tui
                 except ModuleNotFoundError as error:
                     if error.name != "textual":
                         raise
@@ -343,7 +343,7 @@ def main(argv: list[str] | None = None) -> None:
                         "or pass --model-url and --model for a one-off run"
                     )
                 try:
-                    from .ui.config import ConfigurationApp
+                    from history_agent.ui.config import ConfigurationApp
                 except ModuleNotFoundError as error:
                     if error.name != "textual":
                         raise

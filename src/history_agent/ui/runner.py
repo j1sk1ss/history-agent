@@ -6,15 +6,15 @@ from contextlib import suppress
 
 from mcp import Client
 
-from ..client import HistoryClient
-from ..model import Model
-from .app import HistoryApp
+from history_agent.history.client import HistoryClient
+from history_agent.inference.model import Model
+from history_agent.ui.app import HistoryApp
 
 
 async def run_tui(
     client: Client, model: Model, args: Namespace, history: HistoryClient,
 ) -> dict[str, Namespace | str | None] | None:
-    from ..session import converse
+    from history_agent.runtime.session import converse
 
     app: HistoryApp = HistoryApp(args)
 

@@ -17,8 +17,14 @@ import urllib.request
 from collections.abc import Callable, Iterator
 from http.client import HTTPResponse
 
-from .client import NoRedirects
-from .model import MAX_RESPONSE_BYTES, ChatError, Model, compact, sse_events
+from history_agent.history.client import NoRedirects
+from history_agent.inference.model import (
+    MAX_RESPONSE_BYTES,
+    ChatError,
+    Model,
+    compact,
+    sse_events,
+)
 
 
 def api_messages(

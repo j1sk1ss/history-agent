@@ -7,14 +7,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from history_agent.cli import history_settings, main, parse_args
-from history_agent.client import Settings
-from history_agent.config import (
+from history_agent.configuration.defaults import (
     config_path,
     load_defaults,
     save_defaults,
     validate_defaults,
 )
+from history_agent.history.client import Settings
+from history_agent.interfaces.cli import history_settings, main, parse_args
 
 
 class ConfigurationTest(unittest.TestCase):
@@ -110,7 +110,7 @@ class ConfigurationTest(unittest.TestCase):
         save_defaults(args)
         restored = parse_args([], defaults=load_defaults())
         with patch(
-            "history_agent.cli.Settings.from_env",
+            "history_agent.interfaces.cli.Settings.from_env",
             return_value=Settings(
                 "http://history.example", "old", "old", "stale-session"
             ),
@@ -129,7 +129,9 @@ class ConfigurationTest(unittest.TestCase):
             patch("sys.stdin.isatty", return_value=True),
             patch("sys.stdout.isatty", return_value=True),
             patch("history_agent.ui.config.ConfigurationApp") as editor,
-            patch("history_agent.cli.run", new_callable=AsyncMock) as backend,
+            patch(
+                "history_agent.interfaces.cli.run", new_callable=AsyncMock
+            ) as backend,
         ):
             editor.return_value.run.return_value = configured
             backend.side_effect = [{"reload_job": "a" * 32}, None]
@@ -145,7 +147,9 @@ class ConfigurationTest(unittest.TestCase):
             patch("sys.stdin.isatty", return_value=True),
             patch("sys.stdout.isatty", return_value=True),
             patch("history_agent.ui.config.ConfigurationApp") as editor,
-            patch("history_agent.cli.run", new_callable=AsyncMock) as backend,
+            patch(
+                "history_agent.interfaces.cli.run", new_callable=AsyncMock
+            ) as backend,
         ):
             editor.return_value.run.return_value = configured
             main([])
@@ -159,7 +163,9 @@ class ConfigurationTest(unittest.TestCase):
         before = self.path.read_bytes()
         with (
             patch("history_agent.ui.config.ConfigurationApp") as editor,
-            patch("history_agent.cli.run", new_callable=AsyncMock) as backend,
+            patch(
+                "history_agent.interfaces.cli.run", new_callable=AsyncMock
+            ) as backend,
         ):
             main([])
             self.assertEqual(backend.await_args.args[0].model, "saved")
@@ -171,7 +177,9 @@ class ConfigurationTest(unittest.TestCase):
     def test_one_off_launch_does_not_create_defaults(self):
         with (
             patch("history_agent.ui.config.ConfigurationApp") as editor,
-            patch("history_agent.cli.run", new_callable=AsyncMock) as backend,
+            patch(
+                "history_agent.interfaces.cli.run", new_callable=AsyncMock
+            ) as backend,
         ):
             main(["--provider", "llama", "--model", "qwen", "--plain"])
         backend.assert_awaited_once()
@@ -184,7 +192,9 @@ class ConfigurationTest(unittest.TestCase):
             patch("sys.stdin.isatty", return_value=True),
             patch("sys.stdout.isatty", return_value=True),
             patch("history_agent.ui.config.ConfigurationApp") as editor,
-            patch("history_agent.cli.run", new_callable=AsyncMock) as backend,
+            patch(
+                "history_agent.interfaces.cli.run", new_callable=AsyncMock
+            ) as backend,
         ):
             editor.return_value.run.return_value = configured
             backend.side_effect = ["configure", None]
@@ -197,7 +207,9 @@ class ConfigurationTest(unittest.TestCase):
             patch("sys.stdin.isatty", return_value=True),
             patch("sys.stdout.isatty", return_value=True),
             patch("history_agent.ui.config.ConfigurationApp") as editor,
-            patch("history_agent.cli.run", new_callable=AsyncMock) as backend,
+            patch(
+                "history_agent.interfaces.cli.run", new_callable=AsyncMock
+            ) as backend,
         ):
             editor.return_value.run.return_value = None
             main([])
@@ -210,7 +222,9 @@ class ConfigurationTest(unittest.TestCase):
         )
         with (
             patch("history_agent.ui.config.ConfigurationApp") as editor,
-            patch("history_agent.cli.run", new_callable=AsyncMock) as backend,
+            patch(
+                "history_agent.interfaces.cli.run", new_callable=AsyncMock
+            ) as backend,
         ):
             backend.side_effect = [{"settings": configured}, None]
             main(["--provider", "llama", "--model", "original"])

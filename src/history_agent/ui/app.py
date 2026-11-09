@@ -13,15 +13,19 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.css.query import DOMQuery
 from textual.widgets import Button, Collapsible, Input, Static
 
-from ..jobs import UnfinishedJob, delete_job, unfinished_jobs
-from ..terminal import ThinkingText
-from .art import WelcomeArt
-from .bridge import BackendEvent, UIAdapter
-from .config import ConfigurationScreen
-from .formatting import pretty, tool_preview
-from .jobs import UnfinishedJobs
-from .metrics import SessionMetrics
-from .widgets import CommandInput, DetailCard
+from history_agent.review.jobs import (
+    UnfinishedJob,
+    delete_job,
+    unfinished_jobs,
+)
+from history_agent.ui.art import WelcomeArt
+from history_agent.ui.bridge import BackendEvent, UIAdapter
+from history_agent.ui.config import ConfigurationScreen
+from history_agent.ui.formatting import pretty, tool_preview
+from history_agent.ui.jobs import UnfinishedJobs
+from history_agent.ui.metrics import SessionMetrics
+from history_agent.ui.terminal import ThinkingText
+from history_agent.ui.widgets import CommandInput, DetailCard
 
 
 class HistoryApp(App):

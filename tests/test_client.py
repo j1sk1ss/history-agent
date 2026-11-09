@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from history_agent.client import HistoryClient, HistoryError, Settings
+from history_agent.history.client import HistoryClient, HistoryError, Settings
 from tests.fake_history import FakeHistory
 
 SOURCE = {

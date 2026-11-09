@@ -3,14 +3,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from history_agent.batch import Journal
-from history_agent.jobs import (
+from history_agent.inference.model import ChatError
+from history_agent.review.batch import Journal
+from history_agent.review.jobs import (
     JobRunningError,
     delete_job,
     job_lock,
     unfinished_jobs,
 )
-from history_agent.model import ChatError
 
 
 def checkpoint(root, states, *, queue_complete=True, **metadata):

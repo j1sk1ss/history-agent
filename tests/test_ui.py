@@ -8,9 +8,9 @@ from unittest.mock import patch
 from textual.containers import VerticalScroll
 from textual.widgets import Button, Checkbox, Collapsible, Input, Select
 
-from history_agent.cli import parse_args
-from history_agent.config import load_defaults
-from history_agent.jobs import job_lock
+from history_agent.configuration.defaults import load_defaults
+from history_agent.interfaces.cli import parse_args
+from history_agent.review.jobs import job_lock
 from history_agent.ui.app import HistoryApp
 from history_agent.ui.config import ConfigurationApp, ConfigurationScreen
 from history_agent.ui.formatting import pretty, tool_preview

@@ -10,7 +10,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from http.client import HTTPResponse
 
-from .client import NoRedirects
+from history_agent.history.client import NoRedirects
 
 MAX_RESPONSE_BYTES: int = 2 * 1024 * 1024
 
@@ -214,7 +214,7 @@ class Model:
             "openai-responses",
             "codex",
         ):
-            from .providers import complete_native
+            from history_agent.inference.providers import complete_native
 
             return complete_native(self, messages, tools, emit)
         payload: dict[str, object] = {

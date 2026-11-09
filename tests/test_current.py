@@ -1,6 +1,6 @@
 import unittest
 
-from history_agent.current import resolve_current
+from history_agent.history.current import resolve_current
 
 
 class ExampleClient:

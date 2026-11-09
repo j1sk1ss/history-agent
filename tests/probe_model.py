@@ -10,8 +10,8 @@ import urllib.request
 
 from mcp import Client
 
-from history_agent.client import HistoryClient, Settings
-from history_agent.server import create_server
+from history_agent.history.client import HistoryClient, Settings
+from history_agent.interfaces.mcp import create_server
 from tests.fake_history import FakeHistory
 
 

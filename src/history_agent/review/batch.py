@@ -20,20 +20,33 @@ from jsonschema import Draft202012Validator
 from mcp import Client
 from mcp.types import CallToolResult, TextContent
 
-from . import agent, patterns
-from .classification import EVIDENCE_REQUIRED, REVIEW_CRITERIA, STATUSES
-from .client import HistoryClient, HistoryError
-from .comments import review_comment
-from .comparison import COMPARE_ACTION, COMPARE_SCHEMA, scopes
-from .jobs import FINISHED_ITEM_STATES, JobRunningError, job_lock
-from .links import find_history_urls
-from .model import ChatError, compact
-from .verdict import (
+from history_agent.history.client import HistoryClient, HistoryError
+from history_agent.history.comparison import (
+    COMPARE_ACTION,
+    COMPARE_SCHEMA,
+    scopes,
+)
+from history_agent.history.links import find_history_urls
+from history_agent.inference.model import ChatError, compact
+from history_agent.review import patterns
+from history_agent.review.classification import (
+    EVIDENCE_REQUIRED,
+    REVIEW_CRITERIA,
+    STATUSES,
+)
+from history_agent.review.comments import review_comment
+from history_agent.review.jobs import (
+    FINISHED_ITEM_STATES,
+    JobRunningError,
+    job_lock,
+)
+from history_agent.review.verdict import (
     VerdictFormatError,
     extract_verdict,
     normalize_verdict,
     schema_issues,
 )
+from history_agent.runtime import agent
 
 BATCH_ACTION: str = "review_batch"
 BATCH_SCHEMA: dict[str, object] = {
@@ -1329,7 +1342,7 @@ class BatchRouter:
                     )
                 import asyncio
 
-                from .current import resolve_current
+                from history_agent.history.current import resolve_current
 
                 defaults: dict[str, object] = await asyncio.to_thread(
                     resolve_current,

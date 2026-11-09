@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import copy
 
-from . import client as history_client
+from history_agent.history import client as history_client
 
 COMPARE_ACTION: str = "agent_compare_warnings"
 COMPARE_SCHEMA: dict[str, object] = {
