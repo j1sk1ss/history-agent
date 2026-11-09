@@ -11,30 +11,6 @@ from collections.abc import Callable
 from html.parser import HTMLParser
 from urllib.parse import quote
 
-DOC_ACTION: str = "agent_checker_documentation"
-DOC_METADATA: dict[str, object] = {
-    "name": DOC_ACTION,
-    "description": (
-        "Read the exact checker's description and examples from this "
-        "history server's /guide. Paginate long articles."
-    ),
-    "read_only": True,
-    "input_schema": {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["checker_name"],
-        "properties": {
-            "checker_name": {"type": "string", "minLength": 1},
-            "offset": {"type": "integer", "minimum": 0, "default": 0},
-            "limit": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 8000,
-                "default": 3000,
-            },
-        },
-    },
-}
 CHECKER: re.Pattern[str] = re.compile(r"[A-Z][A-Z0-9_]*(?:\.[A-Z0-9_]+)*\Z")
 
 
@@ -55,7 +31,9 @@ class GuideParser(HTMLParser):
         self.in_pre: bool = False
 
     def handle_starttag(
-        self, tag: str, attrs: list[tuple[str, str | None]],
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
     ) -> None:
         attributes: dict[str, str | None] = dict(attrs)
         if tag == "title":
@@ -153,7 +131,10 @@ class GuideParser(HTMLParser):
 
 class Guide:
     def __init__(
-        self, url: str, load: Callable[[], str], ttl: float = 300,
+        self,
+        url: str,
+        load: Callable[[], str],
+        ttl: float = 300,
     ) -> None:
         self.url: str
         self.load: Callable[[], str]
@@ -165,7 +146,10 @@ class Guide:
         self.parser, self.error, self.expires = None, None, 0
 
     def checker(
-        self, name: str, offset: int = 0, limit: int = 3000,
+        self,
+        name: str,
+        offset: int = 0,
+        limit: int = 3000,
     ) -> dict[str, str | int | bool]:
         if time.monotonic() >= self.expires:
             try:

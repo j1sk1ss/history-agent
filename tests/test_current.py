@@ -63,7 +63,7 @@ class ExampleClient:
 class CurrentTest(unittest.TestCase):
     def test_defaults_sort_project_and_branch_and_keep_first_snapshot(self):
         client = ExampleClient()
-        selection = resolve_current(client, {}, ValueError)
+        selection = resolve_current(client.execute, {}, ValueError)
         self.assertEqual(
             selection["scope"],
             {
@@ -84,7 +84,7 @@ class CurrentTest(unittest.TestCase):
     def test_explicit_project_and_branch_are_respected(self):
         client = ExampleClient()
         selection = resolve_current(
-            client, {"project_id": 7, "stream_id": "main"}, ValueError
+            client.execute, {"project_id": 7, "stream_id": "main"}, ValueError
         )
         self.assertEqual(selection["scope"]["snapshot_id"], "zulu-head")
         self.assertFalse(
@@ -94,13 +94,15 @@ class CurrentTest(unittest.TestCase):
     def test_named_project_is_exact_and_unknown_not_silently_replaced(self):
         client = ExampleClient()
         self.assertEqual(
-            resolve_current(client, {"project_name": "Beta"}, ValueError)[
-                "scope"
-            ]["project_id"],
+            resolve_current(
+                client.execute, {"project_name": "Beta"}, ValueError
+            )["scope"]["project_id"],
             3,
         )
         with self.assertRaisesRegex(ValueError, "No matching"):
-            resolve_current(client, {"project_name": "Unknown"}, ValueError)
+            resolve_current(
+                client.execute, {"project_name": "Unknown"}, ValueError
+            )
 
     def test_no_snapshot_refuses_head_or_empty(self):
         client = ExampleClient()
@@ -108,7 +110,7 @@ class CurrentTest(unittest.TestCase):
             "snapshots": [{"snapshot_id": "HEAD"}]
         }
         with self.assertRaisesRegex(ValueError, "concrete"):
-            resolve_current(client, {}, ValueError)
+            resolve_current(client.execute, {}, ValueError)
 
     def test_single_project_fallback(self):
         client = ExampleClient()
@@ -118,7 +120,10 @@ class CurrentTest(unittest.TestCase):
             "snapshots": [{"snapshot_id": "solo"}]
         }
         self.assertEqual(
-            resolve_current(client, {}, ValueError)["scope"]["project_id"], 0
+            resolve_current(client.execute, {}, ValueError)["scope"][
+                "project_id"
+            ],
+            0,
         )
 
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from argparse import Namespace
 from pathlib import Path
 
@@ -21,10 +20,10 @@ from history_agent.review.jobs import (
 from history_agent.ui.art import WelcomeArt
 from history_agent.ui.bridge import BackendEvent, UIAdapter
 from history_agent.ui.config import ConfigurationScreen
-from history_agent.ui.formatting import pretty, tool_preview
+from history_agent.ui.events import BackendPresenter
 from history_agent.ui.jobs import UnfinishedJobs
 from history_agent.ui.metrics import SessionMetrics
-from history_agent.ui.terminal import ThinkingText
+from history_agent.ui.text import ThinkingText
 from history_agent.ui.widgets import CommandInput, DetailCard
 
 
@@ -110,7 +109,11 @@ class HistoryApp(App):
             jobs.set_class(event.size.height < 28, "compact-jobs")
 
     async def add_card(
-        self, title: str, text: str = "", *, kind: str = "notice",
+        self,
+        title: str,
+        text: str = "",
+        *,
+        kind: str = "notice",
         preview: str | None = None,
     ) -> DetailCard:
         self.query_one("#body").remove_class("home")
@@ -143,153 +146,7 @@ class HistoryApp(App):
         self.streams[kind].add_text(text)
 
     async def on_backend_event(self, event: BackendEvent) -> None:
-        kind: str
-        data: dict[str, object]
-        kind, data = event.kind, event.data
-        if kind not in (
-            "begin",
-            "finish",
-            "notice",
-            "input_ready",
-            "welcome",
-            "backend_done",
-        ):
-            self.metrics.event(kind, **data)
-        if kind == "begin":
-            self.busy = True
-            self.last_job_id = None
-            for card in self.streams.values():
-                card.active = False
-            self.streams = {}
-            self.metrics.batch = None
-            self.metrics.start()
-            await self.add_card("You", data["text"], kind="user")
-        elif kind == "input_ready":
-            self.waiting, self.busy = True, False
-            self.query_one(UnfinishedJobs).disabled = False
-            self.query_one(CommandInput).disabled = False
-            self.query_one(CommandInput).focus()
-        elif kind == "backend_done":
-            self.backend_done, self.busy = True, False
-            self.waiting = True
-            self.query_one(CommandInput).disabled = False
-            self.query_one(CommandInput).focus()
-        elif kind == "batch_started":
-            self.last_job_id = data["job_id"]
-        elif kind == "welcome":
-            self.metrics.context = data["context"]
-            self.query_one("#metrics").display = True
-        elif kind in ("notice", "failure"):
-            await self.add_card(
-                "Error"
-                if kind == "failure" or data.get("error")
-                else "Notice",
-                data.get("message", data.get("text", "")),
-                kind="error" if kind == "failure" else "notice",
-            )
-        elif kind == "request_start":
-            self.splitter.flush()
-            await self.flush_text()
-            for card in self.streams.values():
-                card.active = False
-            self.streams = {}
-            self.splitter = ThinkingText(self.append_stream)
-        elif kind in ("content", "reasoning"):
-            if kind == "reasoning":
-                await self.stream_text("reasoning", data["text"])
-            else:
-                self.splitter.feed(data["text"])
-                await self.flush_text()
-        elif kind == "request_end":
-            self.splitter.flush()
-            await self.flush_text()
-            for card in self.streams.values():
-                card.active = False
-        elif kind == "tool_start":
-            key: str = data.get("event_id", data["name"])
-            card: DetailCard | None = await self.add_card(
-                "RUNNING | " + str(data.get("action") or data["name"]),
-                kind="tool",
-                preview="Executing tool call",
-            )
-            card.active = True
-            self.tool_cards[key] = card
-        elif kind == "tool_end":
-            card = self.tool_cards.get(data.get("event_id", data["name"]))
-            if card:
-                card.heading = (
-                    "ERROR | " if data.get("error") else "DONE | "
-                ) + card.heading.removeprefix("RUNNING | ")
-                if data.get("error"):
-                    card.preview_override, card.active = (
-                        "Tool returned an error.",
-                        False,
-                    )
-                card.dirty = True
-        elif kind in ("tool_result", "tool_prefetch"):
-            card = self.tool_cards.pop(data.get("event_id", ""), None)
-            if card is None:
-                card = await self.add_card(
-                    "TOOL | "
-                    + str(data.get("action") or data.get("name", "Tool")),
-                    kind="tool",
-                )
-            response: str = data["response"]
-            try:
-                result: object = json.loads(response)
-            except ValueError:
-                result = response
-            card.text = pretty(
-                {"arguments": data.get("arguments", {}), "result": result}
-            )
-            card.preview_override, card.dirty, card.active = (
-                tool_preview(response),
-                True,
-                False,
-            )
-        elif kind == "batch_progress":
-            await self.add_card(
-                data["checker"],
-                f"Warning {data['warning_id']} | "
-                f"completed {data['done']}/{data['total']}",
-            )
-        elif kind == "batch_verdict":
-            if self.metrics.batch:
-                self.metrics.batch["done"] += 1
-            await self.add_card(
-                data["classification"]
-                + (" | saved" if data["saved"] else " | proposed"),
-                data["comment"],
-                kind="verdict",
-            )
-        elif kind == "batch_patterns":
-            await self.add_card(
-                "Review patterns",
-                pretty(data.get("patterns", [])),
-                preview=f"{data['checker']} | criteria: {data['count']}",
-            )
-        elif kind == "batch_format_repair":
-            await self.add_card(
-                "Format validation", "\n".join(data.get("issues", []))
-            )
-        elif kind == "batch_summary":
-            await self.add_card(
-                "Batch summary", pretty(data["text"]), kind="answer"
-            )
-        elif kind == "history_link":
-            await self.add_card(
-                "History URL resolved", pretty(data), kind="tool"
-            )
-        elif kind == "finish":
-            self.splitter.flush()
-            await self.flush_text()
-            self.busy = False
-            if data.get("answer") and not any(
-                card.text
-                for card in self.streams.values()
-                if card.kind == "answer"
-            ):
-                await self.add_card("Assistant", data["answer"], kind="answer")
+        await BackendPresenter(self).handle(event)
 
     def refresh_display(self) -> None:
         if not self.is_mounted:
@@ -389,7 +246,9 @@ class HistoryApp(App):
             self.exit({"settings": args})
 
     def check_action(
-        self, action: str, parameters: tuple[object, ...],
+        self,
+        action: str,
+        parameters: tuple[object, ...],
     ) -> bool | None:
         if isinstance(self.screen, ConfigurationScreen) and action in (
             "quit",

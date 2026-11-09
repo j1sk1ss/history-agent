@@ -14,13 +14,11 @@ from history_agent.history.client import HistoryClient, Settings
 from history_agent.inference.model import ChatError
 from history_agent.interfaces.chat import Harness
 from history_agent.interfaces.mcp import create_server
-from history_agent.review.batch import (
-    BATCH_ACTION,
-    BatchRouter,
-    BatchRunner,
-    ItemClient,
-    Journal,
-)
+from history_agent.review.batch import BatchRunner
+from history_agent.review.client import ItemClient
+from history_agent.review.journal import Journal
+from history_agent.review.router import BatchRouter
+from history_agent.review.schemas import BATCH_ACTION
 from tests.fake_history import FakeHistory
 from tests.test_chat import answer
 from tests.test_streaming import (

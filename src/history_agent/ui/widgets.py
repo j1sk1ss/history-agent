@@ -11,12 +11,16 @@ from textual.containers import Vertical
 from textual.widgets import Collapsible, Input, Static
 
 from history_agent.runtime.commands import COMMANDS
-from history_agent.ui.terminal import safe_text
+from history_agent.ui.text import safe_text
 
 
 class DetailCard(Vertical):
     def __init__(
-        self, title: str, text: str = "", *, kind: str = "notice",
+        self,
+        title: str,
+        text: str = "",
+        *,
+        kind: str = "notice",
         preview: str | None = None,
     ) -> None:
         super().__init__(classes="card " + kind)

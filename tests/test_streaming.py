@@ -17,7 +17,8 @@ from rich.console import Console
 from history_agent.history.client import HistoryClient, Settings
 from history_agent.interfaces.chat import ChatError, Harness, Model
 from history_agent.interfaces.mcp import create_server
-from history_agent.ui.terminal import TerminalUI, ThinkingText
+from history_agent.ui.terminal import TerminalUI
+from history_agent.ui.text import ThinkingText
 from tests.fake_history import FakeHistory
 from tests.test_client import SOURCE
 

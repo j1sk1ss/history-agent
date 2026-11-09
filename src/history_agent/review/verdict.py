@@ -22,8 +22,11 @@ FINAL_TOOL: str = "submit_verdict"
 
 
 def normalize_verdict(
-    value: dict[str, object], observed: set[tuple[str, int, str]],
-    scope: dict[str, str | int], warning_id: str, checker: str,
+    value: dict[str, object],
+    observed: set[tuple[str, int, str]],
+    scope: dict[str, str | int],
+    warning_id: str,
+    checker: str,
     statuses: dict[str, str],
 ) -> dict[str, object]:
     """
@@ -31,17 +34,6 @@ def normalize_verdict(
     source address.
     """
     result: dict[str, object] = copy.deepcopy(value)
-
-    def aliases(
-        mapping: dict[str, object], target: str, alternatives: tuple[str, ...],
-    ) -> None:
-        for key in alternatives:
-            if key in mapping:
-                if target not in mapping:
-                    mapping[target] = mapping.pop(key)
-                elif mapping[key] == mapping[target]:
-                    mapping.pop(key)
-
     aliases(result, "classification", ("verdict", "status"))
     aliases(result, "comment", ("reason", "rationale", "explanation"))
     aliases(result, "evidence", ("source_evidence", "locations"))
@@ -70,49 +62,12 @@ def normalize_verdict(
                     "Verdict metadata does not match the assigned " + key
                 )
             result.pop(key)
-    if isinstance(result.get("evidence"), dict):
-        result["evidence"] = [result["evidence"]]
-    if isinstance(result.get("evidence"), list):
-        for address in result["evidence"]:
-            if not isinstance(address, dict):
-                continue
-            aliases(address, "file", ("file_path", "path"))
-            aliases(address, "line", ("line_number",))
-            aliases(address, "snapshot_id", ("snapshot", "snapshotId"))
-            line: str | int | None = address.get("line")
-            if isinstance(line, str) and line.isascii() and line.isdigit():
-                address["line"] = int(line)
-            file: str | None = address.get("file")
-            if isinstance(file, str) and isinstance(address.get("line"), int):
-                candidates: set[tuple[str, str]] = {
-                    (path, snapshot)
-                    for path, number, snapshot in observed
-                    if number == address["line"]
-                    and (path == file or short_path(path) == file)
-                    and (
-                        not address.get("snapshot_id")
-                        or address["snapshot_id"] == snapshot
-                    )
-                }
-                if len(candidates) == 1:
-                    address["file"], address["snapshot_id"] = next(
-                        iter(candidates)
-                    )
-            if address.get("snapshot_id") in (None, "") and isinstance(
-                address.get("line"), int
-            ):
-                snapshots: set[str] = {
-                    snapshot
-                    for file, line, snapshot in observed
-                    if file == address.get("file") and line == address["line"]
-                }
-                if len(snapshots) == 1:
-                    address["snapshot_id"] = next(iter(snapshots))
+    normalize_evidence(result, observed)
     return result
 
 
 def schema_issues(
-    value: dict[str, object], validator: Draft202012Validator,
+    value: dict[str, object], validator: Draft202012Validator
 ) -> list[str]:
     issues: list[str] = []
     for error in validator.iter_errors(value):
@@ -123,7 +78,7 @@ def schema_issues(
     if (
         not issues
         and isinstance(value.get("comment"), str)
-        and not value["comment"].strip()
+        and (not value["comment"].strip())
     ):
         issues.append("comment: explanation must not be blank")
     return issues
@@ -139,16 +94,7 @@ def unique_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
 
 
 def extract_verdict(raw: str) -> dict[str, object]:
-    text: str = raw.strip()
-    # Some models emit reasoning tags in content instead of reasoning_content.
-    if text.startswith("<think>"):
-        end: int = text.find("</think>")
-        if end < 0:
-            raise VerdictFormatError(
-                "Batch response contains unfinished reasoning, not a verdict"
-            )
-        reasoning_end: int = end + len("</think>")
-        text = text[reasoning_end:].lstrip()
+    text: str = verdict_text(raw)
     decoder: json.JSONDecoder = json.JSONDecoder(object_pairs_hook=unique_keys)
     candidates: list[dict[str, object]] = []
     start: int | None = None
@@ -159,7 +105,7 @@ def extract_verdict(raw: str) -> dict[str, object]:
     for index, char in enumerate(text):
         if start is None:
             if char == "{":
-                start, depth = index, 1
+                start, depth = (index, 1)
                 quoted = escaped = False
             continue
         if quoted:
@@ -202,11 +148,80 @@ def extract_verdict(raw: str) -> dict[str, object]:
                     candidates.append(value)
     if len(candidates) > 1:
         raise ChatError(
-            "Batch response has multiple verdicts; no review was saved. "
-            "The item remains resumable"
+            (
+                "Batch response has multiple verdicts; no review "
+                "was saved. The item remains resumable"
+            )
         )
     if not candidates or start is not None:
         raise VerdictFormatError(
-            "Batch model did not return one complete JSON verdict"
+            ("Batch model did not return one complete JSON verdict")
         )
     return candidates[0]
+
+
+def aliases(
+    mapping: dict[str, object], target: str, alternatives: tuple[str, ...]
+) -> None:
+    for key in alternatives:
+        if key in mapping:
+            if target not in mapping:
+                mapping[target] = mapping.pop(key)
+            elif mapping[key] == mapping[target]:
+                mapping.pop(key)
+
+
+def normalize_evidence(
+    result: dict[str, object], observed: set[tuple[str, int, str]]
+) -> None:
+    if isinstance(result.get("evidence"), dict):
+        result["evidence"] = [result["evidence"]]
+    if isinstance(result.get("evidence"), list):
+        for address in result["evidence"]:
+            if not isinstance(address, dict):
+                continue
+            aliases(address, "file", ("file_path", "path"))
+            aliases(address, "line", ("line_number",))
+            aliases(address, "snapshot_id", ("snapshot", "snapshotId"))
+            line: str | int | None = address.get("line")
+            if isinstance(line, str) and line.isascii() and line.isdigit():
+                address["line"] = int(line)
+            file: str | None = address.get("file")
+            if isinstance(file, str) and isinstance(address.get("line"), int):
+                candidates: set[tuple[str, str]] = {
+                    (path, snapshot)
+                    for path, number, snapshot in observed
+                    if number == address["line"]
+                    and (path == file or short_path(path) == file)
+                    and (
+                        not address.get("snapshot_id")
+                        or address["snapshot_id"] == snapshot
+                    )
+                }
+                if len(candidates) == 1:
+                    address["file"], address["snapshot_id"] = next(
+                        iter(candidates)
+                    )
+            if address.get("snapshot_id") in (None, "") and isinstance(
+                address.get("line"), int
+            ):
+                snapshots: set[str] = {
+                    snapshot
+                    for file, line, snapshot in observed
+                    if file == address.get("file") and line == address["line"]
+                }
+                if len(snapshots) == 1:
+                    address["snapshot_id"] = next(iter(snapshots))
+
+
+def verdict_text(raw: str) -> str:
+    text: str = raw.strip()
+    if text.startswith("<think>"):
+        end: int = text.find("</think>")
+        if end < 0:
+            raise VerdictFormatError(
+                ("Batch response contains unfinished reasoning, not a verdict")
+            )
+        reasoning_end: int = end + len("</think>")
+        text = text[reasoning_end:].lstrip()
+    return text

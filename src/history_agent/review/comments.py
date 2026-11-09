@@ -32,7 +32,8 @@ def short_path(path: str | Path) -> str:
 
 
 def review_comment(
-    text: str, evidence: Sequence[dict[str, str | int]] = (),
+    text: str,
+    evidence: Sequence[dict[str, str | int]] = (),
     snapshots: Collection[str] = (),
 ) -> str:
     text = text.strip()

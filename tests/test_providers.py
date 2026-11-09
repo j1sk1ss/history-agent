@@ -4,8 +4,11 @@ Local mocked API protocol tests; no API keys or external services required.
 
 import unittest
 
+from history_agent.inference.conversations import (
+    gemini_messages,
+    responses_input,
+)
 from history_agent.inference.model import Model
-from history_agent.inference.providers import gemini_messages, responses_input
 from tests.test_streaming import StreamingServer
 
 TOOLS = [

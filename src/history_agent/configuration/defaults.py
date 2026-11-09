@@ -9,7 +9,8 @@ import re
 from argparse import Namespace
 from pathlib import Path
 
-from history_agent.configuration.setup import private_write, valid_url
+from history_agent.configuration.connection import valid_url
+from history_agent.configuration.files import private_write
 
 PROVIDER_DEFAULTS: dict[str, str] = {
     "ollama": "http://127.0.0.1:11434/v1",

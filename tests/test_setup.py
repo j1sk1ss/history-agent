@@ -9,16 +9,15 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from history_agent.configuration.setup import (
-    CLIENTS,
+from history_agent.configuration.connection import discover_model
+from history_agent.configuration.constants import CLIENTS
+from history_agent.configuration.files import (
     Edit,
-    build_plan,
-    discover_model,
-    main,
-    parse_args,
     read_data,
     write_plan,
 )
+from history_agent.configuration.setup import build_plan, main
+from history_agent.configuration.setup_args import parse_args
 from history_agent.history.client import Settings
 
 
@@ -161,7 +160,7 @@ class SetupTest(unittest.TestCase):
         self.assertEqual(list(self.root.glob("*.bak")), [])
 
     def test_write_failure_rolls_back_changed_files(self):
-        from history_agent import setup
+        from history_agent.configuration import files as setup
 
         first, second, third = (
             self.root / name

@@ -10,7 +10,6 @@ import re
 from sqlite3 import Connection, Cursor
 
 from history_agent.inference.model import compact
-from history_agent.review import batch
 from history_agent.review.classification import PATTERN_CLASSES
 
 PATTERN_SCHEMA: dict[str, object] = {
@@ -39,10 +38,11 @@ def initialize(db: Connection) -> None:
 
 
 def recall(
-    job: batch.Journal, checker: str,
+    db: Connection,
+    checker: str,
 ) -> list[dict[str, str | list[str]]]:
     result: list[dict[str, str | list[str]]] = []
-    rows: Cursor = job.db.execute(
+    rows: Cursor = db.execute(
         "SELECT classification,value FROM checker_patterns WHERE checker=? "
         "ORDER BY uses DESC,rowid DESC LIMIT 6",
         (checker,),
@@ -61,7 +61,9 @@ def recall(
 
 
 def learn(
-    job: batch.Journal, checker: str, verdict: dict[str, object],
+    db: Connection,
+    checker: str,
+    verdict: dict[str, object],
 ) -> None:
     pattern: dict[str, str | list[str]] | None = verdict.get("pattern")
     if not pattern or verdict["classification"] not in PATTERN_CLASSES:
@@ -69,8 +71,8 @@ def learn(
     text: str = compact(pattern)
     if re.search(r"(?:/[A-Za-z0-9_.-]+){3,}|\b[a-fA-F0-9]{40}\b", text):
         return
-    with job.db:
-        job.db.execute(
+    with db:
+        db.execute(
             """INSERT INTO checker_patterns(checker,name,classification,value)
             VALUES(?,?,?,?) ON CONFLICT(checker,name,classification)
             DO UPDATE SET
@@ -82,7 +84,7 @@ def learn(
                 compact(pattern),
             ),
         )
-        job.db.execute(
+        db.execute(
             """DELETE FROM checker_patterns WHERE checker=? AND rowid NOT IN
             (SELECT rowid FROM checker_patterns WHERE checker=?
              ORDER BY uses DESC,rowid DESC LIMIT 8)""",

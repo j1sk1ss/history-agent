@@ -111,7 +111,10 @@ class SessionMetrics:
         self.accounted = True
 
     def summary(
-        self, state: str, *, context_limit: int | None = None,
+        self,
+        state: str,
+        *,
+        context_limit: int | None = None,
         detailed: bool = False,
     ) -> str:
         prompt: int | None

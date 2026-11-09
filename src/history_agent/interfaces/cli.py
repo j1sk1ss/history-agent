@@ -6,22 +6,19 @@ import os
 import re
 import sys
 from dataclasses import replace
-from pathlib import Path
 
 from mcp import Client
 
+from history_agent.configuration.connection import discover_model, valid_url
 from history_agent.configuration.defaults import (
-    LIMIT_FIELDS,
     LOCAL_PROVIDERS,
     PROVIDER_DEFAULTS,
     PROVIDER_KEYS,
-    PROVIDERS,
     load_defaults,
-    validate_defaults,
 )
-from history_agent.configuration.setup import discover_model, valid_url
 from history_agent.history.client import HistoryClient, Settings
 from history_agent.inference.model import ChatError, Model
+from history_agent.interfaces.arguments import parse_args
 from history_agent.interfaces.mcp import create_server
 from history_agent.runtime.session import converse
 
@@ -32,203 +29,6 @@ def model_base(url: str) -> str:
         raise ValueError("history-chat requires a Chat Completions endpoint")
     base = base.removesuffix("/chat/completions")
     return base if re.search(r"/v\d+$", base) else base + "/v1"
-
-
-def parse_args(
-    argv: list[str] | None = None, *,
-    defaults: dict[str, str | bool | int | float | None] | None = None,
-) -> argparse.Namespace:
-    parser: argparse.ArgumentParser = argparse.ArgumentParser(
-        description="Code review harness for local and hosted models"
-    )
-    parser.add_argument(
-        "--configure",
-        action="store_true",
-        help="Open settings and explicitly save chat defaults",
-    )
-    parser.add_argument(
-        "--provider",
-        default="openai-compatible",
-        choices=PROVIDERS,
-        help="Inference transport: OpenAI-compatible, Responses (Codex), "
-        "Anthropic or Gemini",
-    )
-    parser.add_argument(
-        "--model-url",
-        help="Provider API base; defaults to official API or local service",
-    )
-    parser.add_argument(
-        "--model", help="Model ID; auto-detected if /models lists exactly one"
-    )
-    parser.add_argument(
-        "--model-key-env",
-        help="Environment variable containing inference API key; provider "
-        "default if omitted",
-    )
-    parser.add_argument(
-        "--history-url",
-        help="Override HISTORY_URL/HISTORY_CONFIG; supports remote HTTP(S)",
-    )
-    parser.add_argument(
-        "--prompt",
-        help="One request, then exit; otherwise start an interactive chat",
-    )
-    parser.add_argument(
-        "--allow-write",
-        action="store_true",
-        default=True,
-        help="Save each validated batch review immediately (default)",
-    )
-    parser.add_argument(
-        "--read-only",
-        dest="allow_write",
-        action="store_false",
-        help="Disable review writes, overriding saved settings",
-    )
-    parser.add_argument(
-        "--max-steps",
-        type=int,
-        default=12,
-        help="Model requests per user turn",
-    )
-    parser.add_argument("--max-output-tokens", type=int, default=2048)
-    parser.add_argument(
-        "--max-context-bytes",
-        type=int,
-        default=65536,
-        help="JSON input budget, not tokenizer tokens",
-    )
-    parser.add_argument("--max-tool-result-bytes", type=int, default=16384)
-    parser.add_argument("--timeout", type=float, default=60)
-    parser.add_argument(
-        "--no-thinking",
-        action="store_true",
-        help="Send Qwen/llama-server enable_thinking=false template option",
-    )
-    parser.add_argument(
-        "--thinking",
-        dest="no_thinking",
-        action="store_false",
-        help="Use the model default thinking mode",
-    )
-    parser.add_argument(
-        "--stats",
-        action="store_true",
-        help="Print request time, input bytes and reported token/cache usage",
-    )
-    parser.add_argument("--no-stats", dest="stats", action="store_false")
-    display: argparse._MutuallyExclusiveGroup = (
-        parser.add_mutually_exclusive_group()
-    )
-    display.add_argument(
-        "--ui",
-        dest="ui",
-        action="store_true",
-        help="Force the live terminal interface",
-    )
-    display.add_argument(
-        "--plain",
-        dest="ui",
-        action="store_false",
-        help="Plain output for scripts/pipes",
-    )
-    display.add_argument(
-        "--legacy-ui", action="store_true", help=argparse.SUPPRESS
-    )
-    parser.set_defaults(ui=None, history_user=None, history_password=None)
-    parser.add_argument(
-        "--no-stream",
-        action="store_true",
-        help="Use non-streaming JSON for servers without SSE support",
-    )
-    parser.add_argument("--stream", dest="no_stream", action="store_false")
-    parser.add_argument(
-        "--no-stream-usage",
-        action="store_true",
-        help="Omit stream_options for servers that reject include_usage",
-    )
-    parser.add_argument(
-        "--stream-usage", dest="no_stream_usage", action="store_false"
-    )
-    job: argparse._MutuallyExclusiveGroup = (
-        parser.add_mutually_exclusive_group()
-    )
-    job.add_argument(
-        "--batch",
-        nargs=3,
-        metavar=("PROJECT", "BRANCH", "SNAPSHOT"),
-        help="Review all warnings in an isolated-context job",
-    )
-    job.add_argument(
-        "--diff",
-        nargs=4,
-        metavar=("PROJECT", "BRANCH", "CURRENT", "BASE"),
-        help="Review a snapshot difference; default appeared (UI First)",
-    )
-    job.add_argument(
-        "--resume",
-        metavar="JOB_ID",
-        help="Resume a checkpoint using its original scope and write mode",
-    )
-    parser.add_argument(
-        "--subset",
-        choices=("appeared", "disappeared", "both"),
-        default=None,
-        help="Difference subset for --diff; defaults to appeared",
-    )
-    parser.add_argument(
-        "--base-project",
-        type=int,
-        help="Base project for --diff; defaults to current",
-    )
-    parser.add_argument(
-        "--base-branch", help="Base branch for --diff; defaults to current"
-    )
-    parser.add_argument(
-        "--batch-instructions",
-        default="",
-        help="Project-specific rules to retain across batch context resets",
-    )
-    parser.add_argument(
-        "--batch-state-dir",
-        type=Path,
-        default=Path.home() / ".local/state/history-agent/jobs",
-    )
-    parser.add_argument(
-        "--overwrite-reviews",
-        action="store_true",
-        help="Permit replacing existing reviews in explicitly selected "
-        "batch jobs",
-    )
-    parser.add_argument(
-        "--no-patterns",
-        action="store_true",
-        help="Disable checker-local reusable review checklists",
-    )
-    parser.add_argument("--patterns", dest="no_patterns", action="store_false")
-    parser.set_defaults(**validate_defaults(defaults or {}))
-    args: argparse.Namespace = parser.parse_args(argv)
-    try:
-        validate_defaults({name: getattr(args, name) for name in LIMIT_FIELDS})
-    except ValueError as error:
-        parser.error(str(error))
-    if args.overwrite_reviews and not args.allow_write:
-        parser.error("--overwrite-reviews requires --allow-write")
-    if args.prompt is not None and (args.batch or args.diff or args.resume):
-        parser.error(
-            "Use --batch-instructions for a batch job, or --prompt for a "
-            "chat request"
-        )
-    if not args.diff and any(
-        value is not None
-        for value in (args.subset, args.base_project, args.base_branch)
-    ):
-        parser.error(
-            "--subset, --base-project and --base-branch require --diff"
-        )
-    if args.legacy_ui and args.ui is None:
-        args.ui = True
-    return args
 
 
 def history_settings(args: argparse.Namespace) -> Settings:
