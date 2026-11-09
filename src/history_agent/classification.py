@@ -12,9 +12,9 @@ PATTERN_CLASSES = frozenset(("TP", "FP", "WF"))
 CORE_CRITERIA = (
     "TP: checker condition is true and relevant. FP: checker "
     "condition is false. "
-    "WF: checker condition is true but non-actionable in this "
-    "project; explain why. "
-    "A technically correct, irrelevant warning is WF, not FP. "
+    "WF: Technically is a correct work of the checker "
+    "and it has found the defect, but in this context it's "
+    "FP"
     "UC: evidence is insufficient. UD: undecided."
 )
 
