@@ -65,9 +65,7 @@ class Tail:
         self.renderable, self.height = renderable, height
 
     def __rich_console__(
-        self,
-        console: Console,
-        options: ConsoleOptions,
+        self, console: Console, options: ConsoleOptions,
     ) -> RenderResult:
         lines: list[list[Segment]] = console.render_lines(
             self.renderable, options.update(height=None), pad=False

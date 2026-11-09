@@ -5,7 +5,7 @@ from pathlib import Path
 
 from history_agent.configuration.defaults import PROVIDERS
 
-PARSER_OPTIONS: tuple[tuple[tuple[str, ...], dict[str, object]], ...] = (
+SESSION_OPTIONS: tuple[tuple[tuple[str, ...], dict[str, object]], ...] = (
     (
         ("--configure",),
         {
@@ -34,7 +34,7 @@ PARSER_OPTIONS: tuple[tuple[tuple[str, ...], dict[str, object]], ...] = (
     ),
     (
         ("--model",),
-        {"help": "Model ID; auto-detected if /models lists exactly one"},
+        {"help": ("Model ID; auto-detected if /models lists exactly one")},
     ),
     (
         ("--model-key-env",),
@@ -66,7 +66,7 @@ PARSER_OPTIONS: tuple[tuple[tuple[str, ...], dict[str, object]], ...] = (
         {
             "action": "store_true",
             "default": True,
-            "help": "Save each validated batch review immediately (default)",
+            "help": ("Save each validated batch review immediately (default)"),
         },
     ),
     (
@@ -120,11 +120,13 @@ PARSER_OPTIONS: tuple[tuple[tuple[str, ...], dict[str, object]], ...] = (
         },
     ),
     (("--no-stats",), {"dest": "stats", "action": "store_false"}),
+)
+STREAM_OPTIONS: tuple[tuple[tuple[str, ...], dict[str, object]], ...] = (
     (
         ("--no-stream",),
         {
             "action": "store_true",
-            "help": "Use non-streaming JSON for servers without SSE support",
+            "help": ("Use non-streaming JSON for servers without SSE support"),
         },
     ),
     (("--stream",), {"dest": "no_stream", "action": "store_false"}),
@@ -141,12 +143,14 @@ PARSER_OPTIONS: tuple[tuple[tuple[str, ...], dict[str, object]], ...] = (
         ("--stream-usage",),
         {"dest": "no_stream_usage", "action": "store_false"},
     ),
+)
+REVIEW_OPTIONS: tuple[tuple[tuple[str, ...], dict[str, object]], ...] = (
     (
         ("--subset",),
         {
             "choices": ("appeared", "disappeared", "both"),
             "default": None,
-            "help": "Difference subset for --diff; defaults to appeared",
+            "help": ("Difference subset for --diff; defaults to appeared"),
         },
     ),
     (
@@ -192,7 +196,6 @@ PARSER_OPTIONS: tuple[tuple[tuple[str, ...], dict[str, object]], ...] = (
     ),
     (("--patterns",), {"dest": "no_patterns", "action": "store_false"}),
 )
-
 DISPLAY_OPTIONS: tuple[tuple[tuple[str, ...], dict[str, object]], ...] = (
     (
         ("--ui",),
@@ -212,7 +215,6 @@ DISPLAY_OPTIONS: tuple[tuple[tuple[str, ...], dict[str, object]], ...] = (
     ),
     (("--legacy-ui",), {"action": "store_true", "help": argparse.SUPPRESS}),
 )
-
 JOB_OPTIONS: tuple[tuple[tuple[str, ...], dict[str, object]], ...] = (
     (
         ("--batch",),

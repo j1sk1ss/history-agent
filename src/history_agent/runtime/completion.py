@@ -10,10 +10,8 @@ from history_agent.inference.model import ChatError, Model
 
 
 async def complete_model(
-    model: Model,
-    messages: list[dict[str, object]],
-    tools: list[dict[str, object]],
-    on_event: Callable[..., None],
+    model: Model, messages: list[dict[str, object]],
+    tools: list[dict[str, object]], on_event: Callable[..., None],
 ) -> dict[str, object]:
     """
     Do not make Ctrl+C wait for a blocked urllib worker to hit its socket
@@ -24,8 +22,7 @@ async def complete_model(
     stopped: threading.Event = threading.Event()
 
     def deliver(
-        value: dict[str, object] | None,
-        error: BaseException | None,
+        value: dict[str, object] | None, error: BaseException | None,
     ) -> None:
         if not result.done():
             if error is None:

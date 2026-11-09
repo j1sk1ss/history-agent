@@ -15,8 +15,7 @@ from pathlib import Path
 
 
 def merge(
-    original: MutableMapping[str, object],
-    patch: dict[str, object],
+    original: MutableMapping[str, object], patch: dict[str, object],
 ) -> MutableMapping[str, object]:
     for name, value in patch.items():
         if (
@@ -65,8 +64,7 @@ def config_path(root: Path, name: str) -> Path:
 
 
 def read_data(
-    path: Path,
-    format: str,
+    path: Path, format: str,
 ) -> MutableMapping[str, object] | list[dict[str, object]]:
     if not path.exists():
         return [] if format == "providers" else {}

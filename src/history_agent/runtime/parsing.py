@@ -59,12 +59,10 @@ def parse_message(
 
 
 def parse_calls(
-    calls: list[dict[str, object]], allowed: set[str]
+    calls: list[dict[str, object]], allowed: set[str],
 ) -> list[tuple[dict[str, object], dict[str, object]]]:
-    parsed: list[tuple[dict[str, object], dict[str, object]]]
-    ids: set[str]
-    clean: list[dict[str, object]]
-    parsed, ids, clean = ([], set(), [])
+    parsed: list[tuple[dict[str, object], dict[str, object]]] = []
+    ids: set[str] = set()
     for call in calls:
         if (
             call["type"] != "function"
@@ -91,7 +89,6 @@ def parse_calls(
             "type": "function",
             "function": {"name": name, "arguments": compact(arguments)},
         }
-        clean.append(sanitized)
         parsed.append((sanitized, arguments))
         ids.add(call["id"])
     return parsed

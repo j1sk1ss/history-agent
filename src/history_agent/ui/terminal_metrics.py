@@ -51,22 +51,10 @@ def footer(ui: terminal.TerminalUI) -> Panel:
     )
     summary: Text = Text(
         (
-            "step "
-            f"{ui.step}"
-            "  ·  in "
-            f"{input_label}"
-            "  out "
-            f"{output_label}"
-            " tok  ·  cache "
-            f"{(cached if cached is not None else '?')}"
-            "  ·  "
-            f"{('≈' if output is None else '')}"
-            f"{rate:.1f}"
-            " tok/s  ·  TTFT "
-            f"{ttft}"
-            "  ·  "
-            f"{now - ui.started:.1f}"
-            "s"
+            f"step {ui.step}  ·  in {input_label}  out {output_label}"
+            f" tok  ·  cache {(cached if cached is not None else '?')}"
+            f"  ·  {('≈' if output is None else '')}{rate:.1f}"
+            f" tok/s  ·  TTFT {ttft}  ·  {now - ui.started:.1f}s"
         ),
         style="cyan",
     )
@@ -75,14 +63,8 @@ def footer(ui: terminal.TerminalUI) -> Panel:
         progress: Text = Text(
             safe_text(
                 (
-                    "job "
-                    f"{ui.batch['job_id']}"
-                    "  ·  "
-                    f"{ui.batch['done']}"
-                    "/"
-                    f"{ui.batch['total']}"
-                    "  "
-                    f"{ui.batch['checker']}"
+                    f"job {ui.batch['job_id']}  ·  {ui.batch['done']}/"
+                    f"{ui.batch['total']}  {ui.batch['checker']}"
                 )
             ),
             style="yellow",
@@ -95,7 +77,7 @@ def footer(ui: terminal.TerminalUI) -> Panel:
 
 
 def session_totals(
-    ui: terminal.TerminalUI, prompt: int | None, output: int | None
+    ui: terminal.TerminalUI, prompt: int | None, output: int | None,
 ) -> Text:
     pending_in: int = (
         0
@@ -119,13 +101,11 @@ def session_totals(
     )
     totals: Text = Text(
         (
-            "session: in "
-            f"{('≈' if estimated_in else '')}"
-            f"{ui.session_in + pending_in}"
-            "  out "
+            f"session: in {('≈' if estimated_in else '')}"
+            f"{ui.session_in + pending_in}  out "
             f"{('≈' if estimated_out else '')}"
             f"{ui.session_out + pending_out}"
-            "  ·  ≈ estimate until server usage arrives"
+            f"  ·  ≈ estimate until server usage arrives"
         ),
         style="dim",
     )

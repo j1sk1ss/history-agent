@@ -23,19 +23,15 @@ def find_history_urls(text: str) -> list[str]:
 
 def resolve_history_url(
     execute: Callable[[str, dict[str, object]], dict[str, object]],
-    endpoint: str,
-    url: str,
-    error_type: type[Exception],
+    endpoint: str, url: str, error_type: type[Exception],
 ) -> dict[str, object]:
     return HistoryLink(execute, endpoint, error_type).resolve(url)
 
 
 class HistoryLink:
     def __init__(
-        self,
-        execute: Callable[[str, dict[str, object]], dict[str, object]],
-        endpoint: str,
-        error_type: type[Exception],
+        self, execute: Callable[[str, dict[str, object]], dict[str, object]],
+        endpoint: str, error_type: type[Exception],
     ) -> None:
         self.execute: Callable[[str, dict[str, object]], dict[str, object]] = (
             execute
@@ -130,7 +126,7 @@ class HistoryLink:
         return (parts, location_text)
 
     def resolve_projects(
-        self, parts: list[str], comparison: bool
+        self, parts: list[str], comparison: bool,
     ) -> dict[str, set[int]]:
         names: set[str] = {parts[1]}
         if comparison:
@@ -155,7 +151,7 @@ class HistoryLink:
         return projects
 
     def comparison_view(
-        self, current: dict[str, str | int], result: dict[str, object]
+        self, current: dict[str, str | int], result: dict[str, object],
     ) -> str:
         base: dict[str, str | int] = self.scope(4)
         subset_name: str = self.parts[7].lower() if len(self.parts) > 7 else ""
@@ -194,7 +190,7 @@ class HistoryLink:
         return warning
 
     def project_view(
-        self, current: dict[str, str | int], result: dict[str, object]
+        self, current: dict[str, str | int], result: dict[str, object],
     ) -> str:
         warning = self.parts[4] if len(self.parts) > 4 else ""
         result.update(

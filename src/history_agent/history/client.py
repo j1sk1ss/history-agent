@@ -48,9 +48,7 @@ class HistoryClient:
         return self._transport.load_guide(self._guide.url)
 
     def _call(
-        self,
-        action: str,
-        query: dict[str, str | int | None] | None = None,
+        self, action: str, query: dict[str, str | int | None] | None = None,
         body: dict[str, str | None] | None = None,
     ) -> dict[str, object]:
         return self._transport._call(action, query, body)
@@ -128,7 +126,8 @@ class HistoryClient:
             }
 
     def execute(
-        self, action: str, arguments: dict[str, object], *, write: bool = False
+        self, action: str, arguments: dict[str, object], *,
+        write: bool = False,
     ) -> dict[str, object]:
         if action not in (WRITE_ACTIONS if write else READ_ACTIONS):
             raise HistoryError(
@@ -190,7 +189,7 @@ class HistoryClient:
             }
 
     def prepare_arguments(
-        self, action: str, arguments: dict[str, object]
+        self, action: str, arguments: dict[str, object],
     ) -> tuple[dict[str, object], dict[str, object]]:
         info: dict[str, object] = self.discover(action)
         schema: dict[str, object] = info["input_schema"]

@@ -26,8 +26,7 @@ class Model:
     provider: str = "openai-compatible"
 
     def complete(
-        self,
-        messages: list[dict[str, object]],
+        self, messages: list[dict[str, object]],
         tools: list[dict[str, object]],
         on_event: Callable[..., None] | None = None,
     ) -> dict[str, object]:
@@ -84,7 +83,8 @@ class Model:
             ) from None
 
     def payload(
-        self, messages: list[dict[str, object]], tools: list[dict[str, object]]
+        self, messages: list[dict[str, object]],
+        tools: list[dict[str, object]],
     ) -> dict[str, object]:
         payload: dict[str, object] = {
             "model": self.name,

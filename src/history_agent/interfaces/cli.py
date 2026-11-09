@@ -106,7 +106,7 @@ async def run(
             )
             if use_ui and not args.legacy_ui:
                 try:
-                    from history_agent.ui import run_tui
+                    from history_agent.ui.runner import run_tui
                 except ModuleNotFoundError as error:
                     if error.name != "textual":
                         raise

@@ -12,10 +12,7 @@ from history_agent.ui.app import HistoryApp
 
 
 async def run_tui(
-    client: Client,
-    model: Model,
-    args: Namespace,
-    history: HistoryClient,
+    client: Client, model: Model, args: Namespace, history: HistoryClient,
 ) -> dict[str, Namespace | str | None] | None:
     from history_agent.runtime.session import converse
 

@@ -39,12 +39,8 @@ def pretty_json_text(value: str) -> str:
 
 class Conversation:
     def __init__(
-        self,
-        client: Client,
-        model: Model,
-        args: Namespace,
-        history: HistoryClient,
-        ui: TerminalUI | UIAdapter | None,
+        self, client: Client, model: Model, args: Namespace,
+        history: HistoryClient, ui: TerminalUI | UIAdapter | None,
     ) -> None:
         self.client: Client = client
         self.model: Model = model
@@ -191,7 +187,7 @@ class Conversation:
                 self.ui.finish(result)
 
     async def run_batch(
-        self, arguments: dict[str, object], resume: bool = False
+        self, arguments: dict[str, object], resume: bool = False,
     ) -> None:
         self.retry = partial(self.run_batch, dict(arguments), resume=resume)
         self.runner.last_job_id = None

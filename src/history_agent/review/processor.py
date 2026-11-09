@@ -36,9 +36,7 @@ class ItemProcessor:
         self.reuse_patterns: bool = reuse_patterns
 
     async def current(
-        self,
-        scope: dict[str, str | int],
-        warning_id: str,
+        self, scope: dict[str, str | int], warning_id: str,
     ) -> dict[str, object]:
         result: dict[str, object] = await asyncio.to_thread(
             self.history.execute,
@@ -57,7 +55,7 @@ class ItemProcessor:
         return copy.deepcopy(attributes)
 
     async def process(
-        self, job: Journal, row: Row, ids: dict[str, int]
+        self, job: Journal, row: Row, ids: dict[str, int],
     ) -> None:
         self.progress(job, row)
         current: dict[str, object] = await self.current(
@@ -95,10 +93,7 @@ class ItemProcessor:
         )
 
     def verify_previous_write(
-        self,
-        job: Journal,
-        row: Row,
-        current: dict[str, object],
+        self, job: Journal, row: Row, current: dict[str, object],
         ids: dict[str, int],
     ) -> None:
         if matches(current, json.loads(row["verdict"]), ids):
@@ -110,10 +105,7 @@ class ItemProcessor:
         )
 
     async def propose(
-        self,
-        job: Journal,
-        row: Row,
-        current: dict[str, object],
+        self, job: Journal, row: Row, current: dict[str, object],
         ids: dict[str, int],
     ) -> tuple[dict[str, object], dict[str, object]] | None:
         if row["state"] == "proposed":
@@ -140,12 +132,8 @@ class ItemProcessor:
         return verdict, baseline
 
     async def save(
-        self,
-        job: Journal,
-        row: Row,
-        verdict: dict[str, object],
-        baseline: dict[str, object],
-        ids: dict[str, int],
+        self, job: Journal, row: Row, verdict: dict[str, object],
+        baseline: dict[str, object], ids: dict[str, int],
     ) -> bool:
         scope: dict[str, str | int] = job.get("scope")
         warning_id: str = row["warning_id"]
@@ -176,11 +164,7 @@ class ItemProcessor:
         return True
 
     def finish(
-        self,
-        job: Journal,
-        row: Row,
-        verdict: dict[str, object],
-        *,
+        self, job: Journal, row: Row, verdict: dict[str, object], *,
         saved: bool,
     ) -> None:
         job.update(row["warning_id"], "saved" if saved else "reviewed")
@@ -196,8 +180,7 @@ class ItemProcessor:
 
 
 def matches(
-    current: dict[str, object],
-    verdict: dict[str, object],
+    current: dict[str, object], verdict: dict[str, object],
     ids: dict[str, int],
 ) -> bool:
     return (

@@ -11,34 +11,35 @@ from history_agent.configuration.defaults import (
 from history_agent.interfaces.options import (
     DISPLAY_OPTIONS,
     JOB_OPTIONS,
-    PARSER_OPTIONS,
+    REVIEW_OPTIONS,
+    SESSION_OPTIONS,
+    STREAM_OPTIONS,
 )
 
 
 def parse_args(
-    argv: list[str] | None = None,
-    *,
+    argv: list[str] | None = None, *,
     defaults: dict[str, str | bool | int | float | None] | None = None,
 ) -> argparse.Namespace:
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description="Code review harness for local and hosted models"
     )
-    for flags, options in PARSER_OPTIONS[0:18]:
+    for flags, options in SESSION_OPTIONS:
         parser.add_argument(*flags, **options)
     display: argparse._MutuallyExclusiveGroup = (
         parser.add_mutually_exclusive_group()
     )
-    for flags, options in DISPLAY_OPTIONS[0:3]:
+    for flags, options in DISPLAY_OPTIONS:
         display.add_argument(*flags, **options)
     parser.set_defaults(ui=None, history_user=None, history_password=None)
-    for flags, options in PARSER_OPTIONS[18:22]:
+    for flags, options in STREAM_OPTIONS:
         parser.add_argument(*flags, **options)
     job: argparse._MutuallyExclusiveGroup = (
         parser.add_mutually_exclusive_group()
     )
-    for flags, options in JOB_OPTIONS[0:3]:
+    for flags, options in JOB_OPTIONS:
         job.add_argument(*flags, **options)
-    for flags, options in PARSER_OPTIONS[22:30]:
+    for flags, options in REVIEW_OPTIONS:
         parser.add_argument(*flags, **options)
     parser.set_defaults(**validate_defaults(defaults or {}))
     args: argparse.Namespace = parser.parse_args(argv)

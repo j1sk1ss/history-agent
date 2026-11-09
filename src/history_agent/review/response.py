@@ -27,10 +27,7 @@ from history_agent.runtime.agent import Harness
 
 class VerdictResponse:
     def __init__(
-        self,
-        job: Journal,
-        row: Row,
-        baseline: dict[str, object],
+        self, job: Journal, row: Row, baseline: dict[str, object],
         item_client: ItemClient,
         reviewer_factory: Callable[[ItemClient], Harness],
         on_event: Callable[..., None],
@@ -48,11 +45,7 @@ class VerdictResponse:
         self.original_raw: str = ""
         self.draft: dict[str, object] | None = None
 
-    async def resolve(
-        self,
-        raw: str,
-        original_raw: str,
-    ) -> dict[str, object]:
+    async def resolve(self, raw: str, original_raw: str) -> dict[str, object]:
         self.raw = raw
         self.original_raw = original_raw
         self.retain()
@@ -71,10 +64,7 @@ class VerdictResponse:
         return verdict
 
     def retain(
-        self,
-        issues: list[str] | None = None,
-        *,
-        retry: bool = False,
+        self, issues: list[str] | None = None, *, retry: bool = False,
     ) -> None:
         self.job.set(
             "pending_response",
@@ -156,9 +146,7 @@ class VerdictResponse:
         raise ChatError(message)
 
     def verify_repair(
-        self,
-        previous: dict[str, object],
-        verdict: dict[str, object],
+        self, previous: dict[str, object], verdict: dict[str, object],
     ) -> None:
         classification: object = previous.get("classification")
         if (

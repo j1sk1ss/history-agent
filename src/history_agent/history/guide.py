@@ -31,9 +31,7 @@ class GuideParser(HTMLParser):
         self.in_pre: bool = False
 
     def handle_starttag(
-        self,
-        tag: str,
-        attrs: list[tuple[str, str | None]],
+        self, tag: str, attrs: list[tuple[str, str | None]],
     ) -> None:
         attributes: dict[str, str | None] = dict(attrs)
         if tag == "title":
@@ -131,10 +129,7 @@ class GuideParser(HTMLParser):
 
 class Guide:
     def __init__(
-        self,
-        url: str,
-        load: Callable[[], str],
-        ttl: float = 300,
+        self, url: str, load: Callable[[], str], ttl: float = 300,
     ) -> None:
         self.url: str
         self.load: Callable[[], str]
@@ -146,10 +141,7 @@ class Guide:
         self.parser, self.error, self.expires = None, None, 0
 
     def checker(
-        self,
-        name: str,
-        offset: int = 0,
-        limit: int = 3000,
+        self, name: str, offset: int = 0, limit: int = 3000,
     ) -> dict[str, str | int | bool]:
         if time.monotonic() >= self.expires:
             try:

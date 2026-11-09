@@ -8,9 +8,7 @@ from mcp.types import CallToolResult
 class ToolClient(ABC):
     @abstractmethod
     async def call_tool(
-        self,
-        name: str,
-        arguments: dict[str, object],
+        self, name: str, arguments: dict[str, object],
     ) -> CallToolResult:
         """Execute one validated tool request."""
         raise NotImplementedError

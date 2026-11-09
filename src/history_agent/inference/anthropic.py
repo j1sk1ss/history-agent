@@ -13,10 +13,8 @@ from history_agent.inference.transport import _records, _request, result
 
 
 def anthropic(
-    model: Model,
-    messages: list[dict[str, object]],
-    tools: list[dict[str, object]],
-    emit: Callable[..., None],
+    model: Model, messages: list[dict[str, object]],
+    tools: list[dict[str, object]], emit: Callable[..., None],
 ) -> dict[str, object]:
     system: str
     converted: list[dict[str, object]]

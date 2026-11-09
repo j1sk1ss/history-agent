@@ -65,10 +65,7 @@ class Journal:
             )
 
     def update(
-        self,
-        warning_id: str,
-        state: str,
-        *,
+        self, warning_id: str, state: str, *,
         verdict: dict[str, object] | None = None,
         baseline: dict[str, object] | None = None,
     ) -> None:

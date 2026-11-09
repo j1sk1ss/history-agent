@@ -105,9 +105,7 @@ class NoRedirects(urllib.request.HTTPRedirectHandler):
 
 
 def discover_model(
-    base: str,
-    key_env: str,
-    api: str = "chat-completions",
+    base: str, key_env: str, api: str = "chat-completions",
 ) -> str:
     headers: dict[str, str] = {"Accept": "application/json"}
     key: str | None = os.environ.get(key_env)

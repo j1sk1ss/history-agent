@@ -38,9 +38,7 @@ def build_plan(args: argparse.Namespace) -> list[Edit]:
 
 
 def main(
-    argv: list[str] | None = None,
-    *,
-    args: argparse.Namespace | None = None,
+    argv: list[str] | None = None, *, args: argparse.Namespace | None = None,
 ) -> None:
     args = args or parse_args(argv)
     try:

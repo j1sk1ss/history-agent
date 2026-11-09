@@ -88,9 +88,7 @@ class HistoryTransport:
             ) from None
 
     def _request(
-        self,
-        action: str,
-        query: dict[str, str | int | None] | None = None,
+        self, action: str, query: dict[str, str | int | None] | None = None,
         body: dict[str, str | None] | None = None,
     ) -> dict[str, object]:
         params: dict[str, str | int | None] = {**(query or {}), "act": action}
@@ -169,9 +167,7 @@ class HistoryTransport:
         self._authenticated = True
 
     def _call(
-        self,
-        action: str,
-        query: dict[str, str | int | None] | None = None,
+        self, action: str, query: dict[str, str | int | None] | None = None,
         body: dict[str, str | None] | None = None,
     ) -> dict[str, object]:
         if not self._authenticated and self.settings.user is not None:

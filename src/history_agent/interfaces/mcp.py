@@ -37,9 +37,7 @@ class HistoryTools:
         self.client: HistoryClient = client
 
     def execute(
-        self,
-        operation: Callable[..., dict[str, object]],
-        *args: object,
+        self, operation: Callable[..., dict[str, object]], *args: object,
         **kwargs: object,
     ) -> dict[str, object]:
         try:
@@ -66,7 +64,7 @@ class HistoryTools:
         return self.execute(self.client.discover, action)
 
     def history_read(
-        self, action: str, arguments: dict[str, object]
+        self, action: str, arguments: dict[str, object],
     ) -> dict[str, object]:
         """
         Read warnings, traces, source or DXR. Get the action's schema with
@@ -75,9 +73,7 @@ class HistoryTools:
         return self.execute(self.client.execute, action, arguments)
 
     def history_current(
-        self,
-        project_id: int | None = None,
-        project_name: str | None = None,
+        self, project_id: int | None = None, project_name: str | None = None,
         stream_id: str | None = None,
     ) -> dict[str, object]:
         """
@@ -96,7 +92,7 @@ class HistoryTools:
         return self.execute(self.client.execute, "current", args)
 
     def history_write(
-        self, action: str, arguments: dict[str, object]
+        self, action: str, arguments: dict[str, object],
     ) -> dict[str, object]:
         """
         Save an authorized warning review using agent_set_review; requires
@@ -114,7 +110,7 @@ def http_api_reference() -> str:
 
 
 def review_warning(
-    project_id: str, warning_id: str, branch: str = "master"
+    project_id: str, warning_id: str, branch: str = "master",
 ) -> str:
     """
     Investigate a warning with the shared history tools. Save a review

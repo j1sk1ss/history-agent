@@ -44,9 +44,7 @@ class BatchRouter(ToolClient):
         self.user_request: str = ""
 
     async def call_tool(
-        self,
-        name: str,
-        arguments: dict[str, object],
+        self, name: str, arguments: dict[str, object],
     ) -> CallToolResult:
         action: str | None = arguments.get("action")
         if action in (BATCH_ACTION, DIFF_ACTION):
@@ -78,10 +76,7 @@ class BatchRouter(ToolClient):
         return result
 
     async def run_batch(
-        self,
-        name: str,
-        action: str,
-        arguments: dict[str, object],
+        self, name: str, action: str, arguments: dict[str, object],
     ) -> CallToolResult:
         if name == "history_discover":
             return reply(DIFF_META if action == DIFF_ACTION else BATCH_META)
@@ -123,9 +118,7 @@ class BatchRouter(ToolClient):
         return reply(result)
 
     async def default_scope(
-        self,
-        action: str,
-        values: dict[str, object],
+        self, action: str, values: dict[str, object],
     ) -> dict[str, object]:
         if (
             action == BATCH_ACTION

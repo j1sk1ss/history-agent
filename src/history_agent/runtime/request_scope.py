@@ -41,9 +41,7 @@ def initial_arguments(args: Namespace) -> tuple[dict[str, object], bool]:
 
 
 async def command_arguments(
-    text: str,
-    args: Namespace,
-    history: HistoryClient,
+    text: str, args: Namespace, history: HistoryClient,
 ) -> tuple[dict[str, object], bool]:
     parts: list[str] = shlex.split(text)
     if parts[0] == "/resume" and len(parts) == 2:

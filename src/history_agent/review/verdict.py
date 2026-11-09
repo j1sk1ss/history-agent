@@ -22,11 +22,8 @@ FINAL_TOOL: str = "submit_verdict"
 
 
 def normalize_verdict(
-    value: dict[str, object],
-    observed: set[tuple[str, int, str]],
-    scope: dict[str, str | int],
-    warning_id: str,
-    checker: str,
+    value: dict[str, object], observed: set[tuple[str, int, str]],
+    scope: dict[str, str | int], warning_id: str, checker: str,
     statuses: dict[str, str],
 ) -> dict[str, object]:
     """
@@ -67,7 +64,7 @@ def normalize_verdict(
 
 
 def schema_issues(
-    value: dict[str, object], validator: Draft202012Validator
+    value: dict[str, object], validator: Draft202012Validator,
 ) -> list[str]:
     issues: list[str] = []
     for error in validator.iter_errors(value):
@@ -161,7 +158,7 @@ def extract_verdict(raw: str) -> dict[str, object]:
 
 
 def aliases(
-    mapping: dict[str, object], target: str, alternatives: tuple[str, ...]
+    mapping: dict[str, object], target: str, alternatives: tuple[str, ...],
 ) -> None:
     for key in alternatives:
         if key in mapping:
@@ -172,7 +169,7 @@ def aliases(
 
 
 def normalize_evidence(
-    result: dict[str, object], observed: set[tuple[str, int, str]]
+    result: dict[str, object], observed: set[tuple[str, int, str]],
 ) -> None:
     if isinstance(result.get("evidence"), dict):
         result["evidence"] = [result["evidence"]]

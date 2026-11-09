@@ -14,13 +14,8 @@ from history_agent.runtime.tools import ToolClient
 
 class ToolExecutor:
     def __init__(
-        self,
-        client: Client | ToolClient,
-        emit: Callable[..., None],
-        byte_limit: int,
-        *,
-        quiet: bool,
-        identity: int,
+        self, client: Client | ToolClient, emit: Callable[..., None],
+        byte_limit: int, *, quiet: bool, identity: int,
     ) -> None:
         self.client: Client | ToolClient = client
         self.emit: Callable[..., None] = emit
@@ -32,9 +27,7 @@ class ToolExecutor:
         return f"{self.identity}:{call['id']}"
 
     async def run(
-        self,
-        call: dict[str, object],
-        arguments: dict[str, object],
+        self, call: dict[str, object], arguments: dict[str, object],
     ) -> str:
         name: str = call["function"]["name"]
         started: float = time.monotonic()

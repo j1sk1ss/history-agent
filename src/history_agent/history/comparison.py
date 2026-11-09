@@ -21,8 +21,7 @@ def scopes(
 
 
 def legacy_compare(
-    call: Callable[..., dict[str, object]],
-    values: dict[str, str | int],
+    call: Callable[..., dict[str, object]], values: dict[str, str | int],
     error_type: type[Exception],
 ) -> dict[str, object]:
     """
@@ -86,8 +85,7 @@ def legacy_compare(
 
 class WarningNormalizer:
     def __init__(
-        self,
-        call: Callable[..., dict[str, object]],
+        self, call: Callable[..., dict[str, object]],
         error_type: type[Exception],
     ) -> None:
         self.call: Callable[..., dict[str, object]] = call
@@ -97,7 +95,7 @@ class WarningNormalizer:
         ] = {}
 
     def normalize(
-        self, warning: dict[str, object], scope: dict[str, str | int]
+        self, warning: dict[str, object], scope: dict[str, str | int],
     ) -> dict[str, object]:
         data: dict[str, object] = copy.deepcopy(warning)
         if not data.get("checker_name"):
@@ -127,11 +125,8 @@ class WarningNormalizer:
         return data
 
     def select(
-        self,
-        result: dict[str, object],
-        current: dict[str, str | int],
-        base: dict[str, str | int],
-        subset: str,
+        self, result: dict[str, object], current: dict[str, str | int],
+        base: dict[str, str | int], subset: str,
     ) -> list[dict[str, object]]:
         scope: dict[str, str | int] = (
             base if subset == "disappeared" else current

@@ -21,11 +21,7 @@ from history_agent.ui.terminal import TerminalUI
 
 
 async def converse(
-    client: Client,
-    model: Model,
-    args: Namespace,
-    history: HistoryClient,
-    *,
+    client: Client, model: Model, args: Namespace, history: HistoryClient, *,
     ui_override: TerminalUI | UIAdapter | None = None,
 ) -> None:
     session: Session = Session(client, model, args, history, ui_override)
@@ -34,12 +30,8 @@ async def converse(
 
 class Session:
     def __init__(
-        self,
-        client: Client,
-        model: Model,
-        args: Namespace,
-        history: HistoryClient,
-        ui: TerminalUI | UIAdapter | None,
+        self, client: Client, model: Model, args: Namespace,
+        history: HistoryClient, ui: TerminalUI | UIAdapter | None,
     ) -> None:
         self.conversation: Conversation = Conversation(
             client, model, args, history, ui

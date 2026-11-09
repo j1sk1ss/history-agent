@@ -24,12 +24,8 @@ from history_agent.ui.text import Tail, ThinkingText, safe_text
 
 class TerminalUI:
     def __init__(
-        self,
-        model: str,
-        *,
-        allow_write: bool = False,
-        show_thoughts: bool = True,
-        console: Console | None = None,
+        self, model: str, *, allow_write: bool = False,
+        show_thoughts: bool = True, console: Console | None = None,
     ) -> None:
         self.console: Console = console or Console()
         self.model: str

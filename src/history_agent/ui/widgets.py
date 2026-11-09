@@ -16,11 +16,7 @@ from history_agent.ui.text import safe_text
 
 class DetailCard(Vertical):
     def __init__(
-        self,
-        title: str,
-        text: str = "",
-        *,
-        kind: str = "notice",
+        self, title: str, text: str = "", *, kind: str = "notice",
         preview: str | None = None,
     ) -> None:
         super().__init__(classes="card " + kind)

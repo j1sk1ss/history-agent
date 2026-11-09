@@ -188,7 +188,7 @@ class CompletionStream:
 
 
 def read_completion(
-    response: HTTPResponse, emit: Callable[..., None]
+    response: HTTPResponse, emit: Callable[..., None],
 ) -> dict[str, object]:
     if response.headers.get_content_type() == "text/event-stream":
         stream: CompletionStream = CompletionStream(emit)

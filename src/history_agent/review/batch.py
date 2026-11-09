@@ -26,14 +26,9 @@ from history_agent.runtime.agent import Harness
 
 class BatchRunner:
     def __init__(
-        self,
-        history: HistoryClient,
-        client: Client,
-        reviewer_factory: Callable[[ItemClient], Harness],
-        root: str | Path,
-        model_identity: dict[str, str],
-        *,
-        allow_write: bool = False,
+        self, history: HistoryClient, client: Client,
+        reviewer_factory: Callable[[ItemClient], Harness], root: str | Path,
+        model_identity: dict[str, str], *, allow_write: bool = False,
         allow_overwrite: bool = False,
         on_event: Callable[..., None] | None = None,
         reuse_patterns: bool = True,
@@ -55,17 +50,12 @@ class BatchRunner:
         self.last_job_id: str | None = None
 
     async def read(
-        self,
-        action: str,
-        args: dict[str, object],
+        self, action: str, args: dict[str, object],
     ) -> dict[str, object]:
         return await asyncio.to_thread(self.history.execute, action, args)
 
     async def run(
-        self,
-        args: dict[str, object],
-        *,
-        write: bool = False,
+        self, args: dict[str, object], *, write: bool = False,
     ) -> dict[str, object]:
         self.last_job_id = None
         self.validate_request(args, write)
@@ -101,10 +91,7 @@ class BatchRunner:
             )
 
     def initialize_job(
-        self,
-        job: Journal,
-        args: dict[str, object],
-        write: bool,
+        self, job: Journal, args: dict[str, object], write: bool,
     ) -> None:
         scope: dict[str, str | int] = {
             key: args[key]
@@ -195,10 +182,7 @@ class BatchRunner:
         await ReviewQueue(self.read, self.on_event).collect(job)
 
     async def investigate(
-        self,
-        job: Journal,
-        row: sqlite3.Row,
-        baseline: dict[str, object],
+        self, job: Journal, row: sqlite3.Row, baseline: dict[str, object],
     ) -> dict[str, object]:
         investigation: Investigation = Investigation(
             self.history,

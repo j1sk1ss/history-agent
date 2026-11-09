@@ -22,16 +22,10 @@ from history_agent.runtime.messages import tool_exchange
 
 class Investigation:
     def __init__(
-        self,
-        history: HistoryClient,
-        client: Client,
-        job: Journal,
-        row: Row,
+        self, history: HistoryClient, client: Client, job: Journal, row: Row,
         baseline: dict[str, object],
         reviewer_factory: Callable[[ItemClient], Harness],
-        on_event: Callable[..., None],
-        *,
-        reuse_patterns: bool,
+        on_event: Callable[..., None], *, reuse_patterns: bool,
     ) -> None:
         self.history: HistoryClient = history
         self.job: Journal = job
@@ -49,9 +43,7 @@ class Investigation:
         )
 
     async def read(
-        self,
-        action: str,
-        arguments: dict[str, object],
+        self, action: str, arguments: dict[str, object],
     ) -> dict[str, object]:
         return await asyncio.to_thread(self.history.execute, action, arguments)
 
@@ -132,9 +124,7 @@ class Investigation:
                 self.client.snapshots.add(other["snapshot_id"])
 
     async def prefetch(
-        self,
-        reviewer: Harness,
-        checker: dict[str, object],
+        self, reviewer: Harness, checker: dict[str, object],
     ) -> None:
         detail_args: dict[str, object] = {
             **self.scope,
@@ -216,12 +206,8 @@ class Investigation:
         return "agent_source", arguments, data
 
     def attach_packet(
-        self,
-        reviewer: Harness,
-        index: int,
-        action: str,
-        arguments: dict[str, object],
-        data: dict[str, object],
+        self, reviewer: Harness, index: int, action: str,
+        arguments: dict[str, object], data: dict[str, object],
     ) -> None:
         text: str = compact(data)
         if len(text.encode()) > reviewer.max_tool_result_bytes:
@@ -276,9 +262,7 @@ class Investigation:
         return prompt
 
     async def obtain_response(
-        self,
-        reviewer: Harness,
-        prompt: str,
+        self, reviewer: Harness, prompt: str,
         pending: dict[str, object] | None,
     ) -> str:
         if not pending or pending.get("retry_investigation"):

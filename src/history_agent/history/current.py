@@ -5,8 +5,7 @@ from collections.abc import Callable
 
 class CurrentScope:
     def __init__(
-        self,
-        execute: Callable[[str, dict[str, object]], dict[str, object]],
+        self, execute: Callable[[str, dict[str, object]], dict[str, object]],
         error_type: type[Exception],
     ) -> None:
         self.execute: Callable[[str, dict[str, object]], dict[str, object]] = (
@@ -174,7 +173,6 @@ def named_branch(item: object) -> str | None:
 
 def resolve_current(
     execute: Callable[[str, dict[str, object]], dict[str, object]],
-    args: dict[str, str | int],
-    error_type: type[Exception],
+    args: dict[str, str | int], error_type: type[Exception],
 ) -> dict[str, object]:
     return CurrentScope(execute, error_type).resolve(args)

@@ -12,10 +12,8 @@ from history_agent.inference.transport import _records, _request, result
 
 
 def responses(
-    model: Model,
-    messages: list[dict[str, object]],
-    tools: list[dict[str, object]],
-    emit: Callable[..., None],
+    model: Model, messages: list[dict[str, object]],
+    tools: list[dict[str, object]], emit: Callable[..., None],
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "model": model.name,
@@ -101,14 +99,14 @@ class ResponsesState:
         self.emit("content", text=t)
 
     def on_response_reasoning_summary_text_delta(
-        self, item: dict[str, object]
+        self, item: dict[str, object],
     ) -> None:
         t = item.get("delta", "")
         self.thought.append(t)
         self.emit("reasoning", text=t)
 
     def on_response_function_call_arguments_delta(
-        self, item: dict[str, object]
+        self, item: dict[str, object],
     ) -> None:
         entry: dict[str, object] = self.current.setdefault(
             item["item_id"], {"arguments": ""}

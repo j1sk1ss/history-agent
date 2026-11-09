@@ -52,7 +52,7 @@ class TerminalPresenter:
         self.ui.batch.update(total=data["total"], checker=data["checker"])
 
     def handle_batch_progress(
-        self, kind: str, data: dict[str, object]
+        self, kind: str, data: dict[str, object],
     ) -> None:
         self.ui.batch = dict(data)
         self.ui.records = []
@@ -60,7 +60,7 @@ class TerminalPresenter:
         self.ui.state = "Loading warning / restoring checker context"
 
     def handle_batch_finished(
-        self, kind: str, data: dict[str, object]
+        self, kind: str, data: dict[str, object],
     ) -> None:
         self.ui.records, self.ui.batch = ([], None)
         self.ui.state = "Batch complete"
@@ -69,7 +69,7 @@ class TerminalPresenter:
         self.ui.append("content", data["text"])
 
     def handle_batch_format_repair(
-        self, kind: str, data: dict[str, object]
+        self, kind: str, data: dict[str, object],
     ) -> None:
         self.ui.append(
             "tool", "Formatting verdict (one attempt, no tools or writes)\n"
@@ -84,14 +84,8 @@ class TerminalPresenter:
         self.ui.append(
             "tool",
             (
-                "Resolved history link: project "
-                f"{scope['project_id']}"
-                " · "
-                f"{scope['stream_id']}"
-                " · "
-                f"{scope['snapshot_id']}"
-                f"{subset}"
-                "\n"
+                f"Resolved history link: project {scope['project_id']} · "
+                f"{scope['stream_id']} · {scope['snapshot_id']}{subset}\n"
             ),
         )
 

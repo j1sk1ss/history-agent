@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 
 from textual.message import Message
-
-from history_agent.ui import app as history_app
 
 
 class BackendEvent(Message):
@@ -27,10 +25,13 @@ class DisplayConsole:
 class UIAdapter:
     async_prompt: bool = True
 
-    def __init__(self, app: history_app.HistoryApp) -> None:
-        self.app: history_app.HistoryApp
-        self.work: asyncio.Task[None] | None
-        self.app, self.work = app, None
+    def __init__(
+        self, post_event: Callable[[BackendEvent], bool],
+        inputs: asyncio.Queue[str],
+    ) -> None:
+        self.post_event: Callable[[BackendEvent], bool] = post_event
+        self.inputs: asyncio.Queue[str] = inputs
+        self.work: asyncio.Task[None] | None = None
         self.last_error: str | None = None
         self.console: DisplayConsole = DisplayConsole(self)
 
@@ -42,7 +43,7 @@ class UIAdapter:
             if message == self.last_error:
                 return
             self.last_error = message
-        self.app.post_message(BackendEvent(kind, data))
+        self.post_event(BackendEvent(kind, data))
 
     def welcome(self, context: int) -> None:
         self.event("welcome", context=context)
@@ -63,7 +64,7 @@ class UIAdapter:
 
     async def prompt_async(self) -> str:
         self.event("input_ready")
-        return await self.app.inputs.get()
+        return await self.inputs.get()
 
     async def execute(self, operation: Coroutine[None, None, None]) -> None:
         self.work = asyncio.create_task(operation)

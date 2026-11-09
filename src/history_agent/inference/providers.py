@@ -13,10 +13,8 @@ from history_agent.inference.responses import responses
 
 
 def complete_native(
-    model: Model,
-    messages: list[dict[str, object]],
-    tools: list[dict[str, object]],
-    emit: Callable[..., None],
+    model: Model, messages: list[dict[str, object]],
+    tools: list[dict[str, object]], emit: Callable[..., None],
 ) -> dict[str, object]:
     try:
         if model.provider in ("anthropic", "claude"):

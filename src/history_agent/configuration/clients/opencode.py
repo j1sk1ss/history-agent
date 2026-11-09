@@ -12,9 +12,7 @@ from history_agent.configuration.files import Edit, config_path, read_data
 
 
 def build(
-    args: Namespace,
-    stdio: dict[str, object],
-    key: str | None,
+    args: Namespace, stdio: dict[str, object], key: str | None,
 ) -> list[Edit]:
     root: Path = args.config_root
     executable: Path = Path(sys.executable)

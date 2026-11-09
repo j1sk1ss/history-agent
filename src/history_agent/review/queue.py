@@ -72,12 +72,8 @@ class ReviewQueue:
         await self.scan(job, COMPARE_ACTION, values, 0, None)
 
     async def scan(
-        self,
-        job: Journal,
-        action: str,
-        values: dict[str, object],
-        ordinal: int,
-        checker: str | None,
+        self, job: Journal, action: str, values: dict[str, object],
+        ordinal: int, checker: str | None,
     ) -> int:
         offset: int = 0
         while True:
@@ -109,10 +105,7 @@ class ReviewQueue:
             offset = next_offset
 
     def store(
-        self,
-        job: Journal,
-        warnings: list[dict[str, object]],
-        ordinal: int,
+        self, job: Journal, warnings: list[dict[str, object]], ordinal: int,
         checker: str | None,
     ) -> int:
         with job.db:

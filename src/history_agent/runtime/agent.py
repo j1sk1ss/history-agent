@@ -21,17 +21,10 @@ from history_agent.runtime.tools import ToolClient
 
 class Harness:
     def __init__(
-        self,
-        client: Client | ToolClient,
-        model: Model,
-        tools: list[Tool],
-        *,
-        allow_write: bool = False,
-        max_steps: int = 12,
-        max_context_bytes: int = 65536,
-        max_tool_result_bytes: int = 16384,
-        stats: bool = False,
-        on_event: Callable[..., None] | None = None,
+        self, client: Client | ToolClient, model: Model, tools: list[Tool], *,
+        allow_write: bool = False, max_steps: int = 12,
+        max_context_bytes: int = 65536, max_tool_result_bytes: int = 16384,
+        stats: bool = False, on_event: Callable[..., None] | None = None,
     ) -> None:
         self.client: Client | ToolClient = client
         self.model: Model = model
@@ -138,11 +131,7 @@ class Harness:
             )
 
     def report_usage(
-        self,
-        result: dict[str, object],
-        step: int,
-        size: int,
-        started: float,
+        self, result: dict[str, object], step: int, size: int, started: float,
     ) -> None:
         if not self.stats or self.on_event:
             return
@@ -255,8 +244,7 @@ class Harness:
         return result
 
     def final_answer(
-        self,
-        message: dict[str, object],
+        self, message: dict[str, object],
         calls: list[tuple[dict[str, object], dict[str, object]]],
     ) -> str | None:
         if not calls:

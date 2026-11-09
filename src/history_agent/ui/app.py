@@ -44,7 +44,7 @@ class HistoryApp(App):
         self.args: Namespace = args
         self.inputs: asyncio.Queue[str] = asyncio.Queue()
         self.ready: asyncio.Event = asyncio.Event()
-        self.adapter: UIAdapter = UIAdapter(self)
+        self.adapter: UIAdapter = UIAdapter(self.post_message, self.inputs)
         self.metrics: SessionMetrics = SessionMetrics()
         self.cards: list[DetailCard] = []
         self.streams: dict[str, DetailCard] = {}
@@ -109,11 +109,7 @@ class HistoryApp(App):
             jobs.set_class(event.size.height < 28, "compact-jobs")
 
     async def add_card(
-        self,
-        title: str,
-        text: str = "",
-        *,
-        kind: str = "notice",
+        self, title: str, text: str = "", *, kind: str = "notice",
         preview: str | None = None,
     ) -> DetailCard:
         self.query_one("#body").remove_class("home")
@@ -246,9 +242,7 @@ class HistoryApp(App):
             self.exit({"settings": args})
 
     def check_action(
-        self,
-        action: str,
-        parameters: tuple[object, ...],
+        self, action: str, parameters: tuple[object, ...],
     ) -> bool | None:
         if isinstance(self.screen, ConfigurationScreen) and action in (
             "quit",

@@ -18,9 +18,7 @@ class ItemClient(ToolClient):
     """
 
     def __init__(
-        self,
-        client: Client,
-        scope: dict[str, str | int],
+        self, client: Client, scope: dict[str, str | int],
         record: set[tuple[str, int, str]],
     ) -> None:
         self.client: Client
@@ -30,9 +28,7 @@ class ItemClient(ToolClient):
         self.snapshots: set[str] = {scope["snapshot_id"]}
 
     def observe(
-        self,
-        action: str | None,
-        args: dict[str, object],
+        self, action: str | None, args: dict[str, object],
         result: dict[str, object],
     ) -> None:
         def overrides(value: object) -> None:
@@ -61,9 +57,7 @@ class ItemClient(ToolClient):
                     )
 
     async def call_tool(
-        self,
-        name: str,
-        arguments: dict[str, object],
+        self, name: str, arguments: dict[str, object],
     ) -> CallToolResult:
         if name not in ("history_discover", "history_read"):
             raise ChatError(

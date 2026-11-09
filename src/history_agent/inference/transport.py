@@ -17,11 +17,8 @@ from history_agent.inference.stream import sse_events
 
 
 def result(
-    content: str | None,
-    calls: list[tuple[str, str, str | dict[str, object]]],
-    reason: str,
-    usage: dict[str, object] | None = None,
-    *,
+    content: str | None, calls: list[tuple[str, str, str | dict[str, object]]],
+    reason: str, usage: dict[str, object] | None = None, *,
     reasoning: str | None = None,
     gemini_parts: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
@@ -54,13 +51,8 @@ def result(
 
 
 def _request(
-    base: str,
-    path: str,
-    payload: dict[str, object],
-    headers: dict[str, str],
-    timeout: float,
-    *,
-    stream: bool,
+    base: str, path: str, payload: dict[str, object], headers: dict[str, str],
+    timeout: float, *, stream: bool,
 ) -> HTTPResponse:
     url: str = base.rstrip("/") + path
     request: urllib.request.Request = urllib.request.Request(
@@ -75,8 +67,7 @@ def _request(
 
 
 def _records(
-    response: HTTPResponse,
-    stream: bool,
+    response: HTTPResponse, stream: bool,
 ) -> Iterator[dict[str, object]]:
     if stream and response.headers.get_content_type() == "text/event-stream":
         for data in sse_events(response):

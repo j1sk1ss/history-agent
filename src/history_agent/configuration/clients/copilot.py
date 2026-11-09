@@ -22,9 +22,7 @@ def vscode_directory(args: Namespace) -> Path:
 
 
 def build(
-    args: Namespace,
-    stdio: dict[str, object],
-    key: str | None,
+    args: Namespace, stdio: dict[str, object], key: str | None,
 ) -> list[Edit]:
     root: Path = args.config_root
     plan: list[Edit] = []

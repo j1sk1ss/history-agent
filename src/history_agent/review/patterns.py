@@ -37,10 +37,7 @@ def initialize(db: Connection) -> None:
         PRIMARY KEY(checker,name,classification))""")
 
 
-def recall(
-    db: Connection,
-    checker: str,
-) -> list[dict[str, str | list[str]]]:
+def recall(db: Connection, checker: str) -> list[dict[str, str | list[str]]]:
     result: list[dict[str, str | list[str]]] = []
     rows: Cursor = db.execute(
         "SELECT classification,value FROM checker_patterns WHERE checker=? "
@@ -60,11 +57,7 @@ def recall(
     return result
 
 
-def learn(
-    db: Connection,
-    checker: str,
-    verdict: dict[str, object],
-) -> None:
+def learn(db: Connection, checker: str, verdict: dict[str, object]) -> None:
     pattern: dict[str, str | list[str]] | None = verdict.get("pattern")
     if not pattern or verdict["classification"] not in PATTERN_CLASSES:
         return

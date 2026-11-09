@@ -4,10 +4,7 @@ from history_agent.inference.model import compact
 
 
 def tool_exchange(
-    call_id: str,
-    action: str,
-    arguments: dict[str, object],
-    contents: str,
+    call_id: str, action: str, arguments: dict[str, object], contents: str,
 ) -> list[dict[str, object]]:
     return [
         {
