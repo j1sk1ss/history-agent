@@ -14,7 +14,6 @@ from history_agent.review.comments import review_comment
 from history_agent.review.journal import Journal
 from history_agent.review.models import ReviewPattern, ReviewVerdict
 from history_agent.review.prompts import FORMAT_REPAIR
-from history_agent.review.schemas import RESULT_SCHEMA
 from history_agent.review.storage.models import ReviewItem
 from history_agent.review.verdict import (
     VerdictFormatError,
@@ -127,7 +126,7 @@ class VerdictResponse:
         self.raw = await formatter.ask(
             compact(
                 {
-                    "schema": RESULT_SCHEMA,
+                    "schema": ReviewVerdict.model_json_schema(),
                     "validation_errors": issues,
                     "draft": self.raw,
                 }

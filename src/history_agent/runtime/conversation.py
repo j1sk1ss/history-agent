@@ -13,8 +13,8 @@ from mcp import Client
 from mcp.types import Tool
 
 from history_agent.history.client import HistoryClient, HistoryError
+from history_agent.history.constants import URL_ACTION
 from history_agent.history.links import find_history_urls
-from history_agent.history.schemas import URL_ACTION
 from history_agent.inference.model import ChatError, Model, compact
 from history_agent.review.batch import BatchRunner
 from history_agent.review.client import ItemClient

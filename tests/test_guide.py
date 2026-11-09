@@ -1,8 +1,8 @@
 import unittest
 
 from history_agent.history.client import HistoryClient, HistoryError, Settings
+from history_agent.history.constants import DOC_ACTION
 from history_agent.history.guide import Guide, GuideError
-from history_agent.history.schemas import DOC_ACTION
 from tests.fake_history import FakeHistory
 
 HTML = """<!doctype html><html><head><title>Synthetic Svace guide</title>

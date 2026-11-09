@@ -6,7 +6,6 @@ from jsonschema import Draft202012Validator
 from pydantic import ValidationError
 
 from history_agent.review.models import ReviewPattern, ReviewVerdict
-from history_agent.review.schemas import RESULT_SCHEMA
 
 
 class ReviewModelsTest(unittest.TestCase):
@@ -30,8 +29,7 @@ class ReviewModelsTest(unittest.TestCase):
         self.assertEqual(parsed.evidence[0].line, 3)
         self.assertIsInstance(parsed.pattern, ReviewPattern)
         self.assertEqual(parsed.model_dump(exclude_none=True), value)
-        Draft202012Validator(RESULT_SCHEMA).validate(value)
-        self.assertEqual(RESULT_SCHEMA, ReviewVerdict.model_json_schema())
+        Draft202012Validator(ReviewVerdict.model_json_schema()).validate(value)
 
     def test_nested_evidence_rejects_coercion_and_unknown_fields(self) -> None:
         for line in (True, "3", 3.0, 0):

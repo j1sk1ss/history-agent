@@ -17,9 +17,10 @@ from history_agent.interfaces.mcp import create_server
 from history_agent.review import patterns
 from history_agent.review.batch import BatchRunner
 from history_agent.review.client import ItemClient
+from history_agent.review.constants import BATCH_ACTION
 from history_agent.review.journal import Journal
+from history_agent.review.requests import BatchCommand
 from history_agent.review.router import BatchRouter
-from history_agent.review.schemas import BATCH_ACTION
 from tests.fake_history import FakeHistory
 from tests.test_chat import answer
 from tests.test_streaming import (
@@ -691,11 +692,9 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
                 data = await router.call_tool(
                     "history_discover", {"action": BATCH_ACTION}
                 )
-                self.assertIn(
-                    "job_id",
-                    json.loads(data.content[0].text)["input_schema"][
-                        "properties"
-                    ],
+                self.assertEqual(
+                    json.loads(data.content[0].text)["input_schema"],
+                    BatchCommand.model_json_schema(),
                 )
                 data = await router.call_tool("history_discover", {})
                 self.assertIn(

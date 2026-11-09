@@ -6,8 +6,8 @@ import asyncio
 from collections.abc import Callable
 from pathlib import Path
 
-from jsonschema import Draft202012Validator
 from mcp import Client
+from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from history_agent.history.client import HistoryClient, HistoryError
@@ -21,7 +21,11 @@ from history_agent.review.journal import Journal
 from history_agent.review.models import ReviewVerdict
 from history_agent.review.processor import ItemProcessor
 from history_agent.review.queue import ReviewQueue
-from history_agent.review.schemas import BATCH_SCHEMA
+from history_agent.review.requests import (
+    BatchRequest,
+    ResolvedBatchCommand,
+    ResumeRequest,
+)
 from history_agent.review.storage.models import ReviewItem
 from history_agent.runtime.agent import Harness
 
@@ -60,13 +64,18 @@ class BatchRunner:
         self, args: dict[str, object], *, write: bool = False,
     ) -> dict[str, object]:
         self.last_job_id = None
-        self.validate_request(args, write)
-        job: Journal = Journal(self.root, args.get("job_id"))
+        request: BatchRequest | ResumeRequest = self.validate_request(
+            args, write
+        )
+        job_id: str | None = (
+            request.job_id if isinstance(request, ResumeRequest) else None
+        )
+        job: Journal = Journal(self.root, job_id)
         self.last_job_id = job.id
         try:
             with job.lock():
-                if not args.get("job_id"):
-                    self.initialize_job(job, args, write)
+                if isinstance(request, BatchRequest):
+                    self.initialize_job(job, request, write)
                 self.validate_checkpoint(job, write)
                 await self.process_queue(job)
                 self.last_summary = job.summary()
@@ -80,30 +89,42 @@ class BatchRunner:
             self.last_summary = job.summary()
             job.close()
 
-    def validate_request(self, args: dict[str, object], write: bool) -> None:
-        if not Draft202012Validator(BATCH_SCHEMA).is_valid(args):
+    def validate_request(
+        self, args: dict[str, object], write: bool,
+    ) -> BatchRequest | ResumeRequest:
+        try:
+            request: BatchRequest | ResumeRequest = (
+                ResolvedBatchCommand.model_validate(args).root
+            )
+        except ValidationError:
             raise ChatError(
                 "Invalid review_batch arguments; discover its schema first"
-            )
+            ) from None
         if write and not self.allow_write:
             raise ChatError("Batch writes require --allow-write")
-        if args.get("overwrite") and not self.allow_overwrite:
+        if (
+            isinstance(request, BatchRequest)
+            and request.overwrite
+            and not self.allow_overwrite
+        ):
             raise ChatError(
                 "Replacing existing batch reviews requires --overwrite-reviews"
             )
+        return request
 
     def initialize_job(
-        self, job: Journal, args: dict[str, object], write: bool,
+        self, job: Journal, request: BatchRequest, write: bool,
     ) -> None:
         scope: dict[str, str | int] = {
-            key: args[key]
-            for key in ("project_id", "stream_id", "snapshot_id")
+            "project_id": request.project_id,
+            "stream_id": request.stream_id,
+            "snapshot_id": request.snapshot_id,
         }
-        if args.get("base_snapshot_id"):
+        if request.base_snapshot_id is not None:
             current: dict[str, str | int]
             base: dict[str, str | int]
-            current, base = scopes(args)
-            subset: str = args.get("subset", "appeared")
+            current, base = scopes(request.model_dump(exclude_none=True))
+            subset: str = request.subset
             job.set(
                 "comparison",
                 {
@@ -119,9 +140,9 @@ class BatchRunner:
             "endpoint": self.history.endpoint,
             "model": self.model_identity,
             "write": write,
-            "instructions": args.get("instructions", ""),
-            "overwrite": args.get("overwrite", False),
-            "checker_name": args.get("checker_name"),
+            "instructions": request.instructions,
+            "overwrite": request.overwrite,
+            "checker_name": request.checker_name,
         }
         for key, value in values.items():
             job.set(key, value)

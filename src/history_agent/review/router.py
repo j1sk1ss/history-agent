@@ -5,21 +5,23 @@ from __future__ import annotations
 import asyncio
 import json
 
-from jsonschema import Draft202012Validator
 from mcp import Client
 from mcp.types import CallToolResult, TextContent
+from pydantic import ValidationError
 
+from history_agent.contracts import ActionDefinition
 from history_agent.history.client import HistoryError
 from history_agent.history.current import resolve_current
 from history_agent.history.links import find_history_urls
 from history_agent.inference.model import ChatError, compact
+from history_agent.review.actions import BATCH_REVIEW, DIFFERENCE_REVIEW
 from history_agent.review.batch import BatchRunner
-from history_agent.review.schemas import (
-    BATCH_ACTION,
-    BATCH_META,
-    DIFF_ACTION,
-    DIFF_META,
-    DIFF_SCHEMA,
+from history_agent.review.constants import BATCH_ACTION, DIFF_ACTION
+from history_agent.review.requests import (
+    BatchCommand,
+    BatchSelection,
+    DifferenceCommand,
+    ResumeRequest,
 )
 from history_agent.runtime.tools import ToolClient
 
@@ -60,14 +62,14 @@ class BatchRouter(ToolClient):
             data["actions"].append(
                 {
                     "name": BATCH_ACTION,
-                    "description": BATCH_META["description"],
+                    "description": BATCH_REVIEW.description,
                     "tool": "history_read/history_write",
                 }
             )
             data["actions"].append(
                 {
                     "name": DIFF_ACTION,
-                    "description": DIFF_META["description"],
+                    "description": DIFFERENCE_REVIEW.description,
                     "tool": "history_read/history_write",
                 }
             )
@@ -79,7 +81,10 @@ class BatchRouter(ToolClient):
         self, name: str, action: str, arguments: dict[str, object],
     ) -> CallToolResult:
         if name == "history_discover":
-            return reply(DIFF_META if action == DIFF_ACTION else BATCH_META)
+            definition: ActionDefinition = (
+                DIFFERENCE_REVIEW if action == DIFF_ACTION else BATCH_REVIEW
+            )
+            return reply(definition.metadata().model_dump())
 
         if name not in ("history_read", "history_write"):
             raise ChatError("Unsupported batch tool")
@@ -89,15 +94,20 @@ class BatchRouter(ToolClient):
         if not isinstance(raw, dict):
             raise ChatError("review_batch arguments must be an object")
 
-        if action == DIFF_ACTION and not Draft202012Validator(
-            DIFF_SCHEMA
-        ).is_valid(raw):
-            raise ChatError(
-                "Invalid review_diff arguments; specify current/base "
-                "snapshots or only job_id to resume"
+        try:
+            request: BatchSelection | ResumeRequest = (
+                DifferenceCommand.model_validate(raw).root
+                if action == DIFF_ACTION
+                else BatchCommand.model_validate(raw).root
             )
-
-        values: dict[str, object] = dict(raw)
+        except ValidationError:
+            raise ChatError(
+                f"Invalid {action} arguments; specify a valid scope "
+                "or only job_id to resume"
+            ) from None
+        values: dict[str, object] = request.model_dump(
+            exclude_unset=True, exclude_none=True
+        )
 
         values = await self.default_scope(action, values)
         if "job_id" not in values and self.user_request:

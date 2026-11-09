@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from history_agent.contracts import ActionMetadata
 
-def legacy_action(name: str, metadata: dict[str, object]) -> dict[str, object]:
+
+def legacy_action(name: str, metadata: dict[str, object]) -> ActionMetadata:
     properties: dict[str, dict[str, object]]
     required: list[str]
     properties, required = ({}, [])
@@ -47,14 +49,14 @@ def legacy_action(name: str, metadata: dict[str, object]) -> dict[str, object]:
             "default": 20,
             "x-http-parameter-location": "post",
         }
-    return {
-        "name": name,
-        "description": metadata.get("desc", ""),
-        "read_only": True,
-        "input_schema": {
+    return ActionMetadata(
+        name=name,
+        description=metadata.get("desc", ""),
+        read_only=True,
+        input_schema={
             "type": "object",
             "properties": properties,
             "required": required,
             "additionalProperties": False,
         },
-    }
+    )

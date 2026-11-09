@@ -7,27 +7,29 @@ import threading
 from _thread import RLock
 
 from jsonschema import Draft202012Validator
-from jsonschema.exceptions import ValidationError
 
+from history_agent.contracts import ActionMetadata
+from history_agent.history.actions import (
+    COMPARE_WARNINGS,
+    LOCAL_ACTIONS,
+    LOCAL_REQUESTS,
+)
 from history_agent.history.catalog import legacy_action
 from history_agent.history.comparison import legacy_compare
+from history_agent.history.constants import (
+    COMPARE_ACTION,
+    CURRENT_ACTION,
+    DOC_ACTION,
+    READ_ACTIONS,
+    URL_ACTION,
+    WRITE_ACTIONS,
+)
 from history_agent.history.current import resolve_current
 from history_agent.history.guide import Guide, GuideError
 from history_agent.history.links import resolve_history_url
-from history_agent.history.schemas import (
-    COMPARE_ACTION,
-    COMPARE_META,
-    CURRENT_ACTION,
-    CURRENT_META,
-    DOC_ACTION,
-    DOC_METADATA,
-    READ_ACTIONS,
-    URL_ACTION,
-    URL_META,
-    WRITE_ACTIONS,
-)
 from history_agent.history.settings import HistoryError, Settings
 from history_agent.history.transport import HistoryTransport
+from history_agent.history.validation import validate_arguments
 from history_agent.review.comments import review_comment
 
 
@@ -40,7 +42,7 @@ class HistoryClient:
             self.endpoint.removesuffix("/history/api") + "/guide",
             self._load_guide,
         )
-        self._catalog: dict[str, dict[str, object]] | None = None
+        self._catalog: dict[str, ActionMetadata] | None = None
         self._legacy_comparison: bool = False
         self._lock: RLock = threading.RLock()
 
@@ -53,7 +55,7 @@ class HistoryClient:
     ) -> dict[str, object]:
         return self._transport._call(action, query, body)
 
-    def _load_catalog(self) -> dict[str, dict[str, object]]:
+    def _load_catalog(self) -> dict[str, ActionMetadata]:
         if self._catalog is not None:
             return self._catalog
         legacy: dict[str, dict[str, object]] = self._call("get_actions").get(
@@ -63,7 +65,7 @@ class HistoryClient:
             raise HistoryError(
                 "History get_actions returned an invalid catalog"
             )
-        catalog: dict[str, dict[str, object]] = {
+        catalog: dict[str, ActionMetadata] = {
             name: legacy_action(name, metadata)
             for name, metadata in legacy.items()
             if name in READ_ACTIONS
@@ -80,40 +82,39 @@ class HistoryClient:
                 )
                 schema["additionalProperties"] = False
                 Draft202012Validator.check_schema(schema)
-                catalog[name] = {
-                    "name": name,
-                    "description": metadata["description"],
-                    "input_schema": schema,
-                    "read_only": name in READ_ACTIONS,
-                }
-        catalog[DOC_ACTION] = copy.deepcopy(DOC_METADATA)
-        catalog[URL_ACTION] = copy.deepcopy(URL_META)
-        catalog[CURRENT_ACTION] = copy.deepcopy(CURRENT_META)
+                catalog[name] = ActionMetadata(
+                    name=name,
+                    description=metadata["description"],
+                    input_schema=schema,
+                    read_only=name in READ_ACTIONS,
+                )
+        for definition in LOCAL_ACTIONS:
+            catalog[definition.name] = definition.metadata()
         if (
             COMPARE_ACTION not in catalog
             and "get_warnings_compare_svace2svace" in legacy
         ):
-            catalog[COMPARE_ACTION] = copy.deepcopy(COMPARE_META)
+            catalog[COMPARE_ACTION] = COMPARE_WARNINGS.metadata()
             self._legacy_comparison = True
         self._catalog = catalog
         return catalog
 
     def discover(self, action: str | None = None) -> dict[str, object]:
         with self._lock:
-            catalog: dict[str, dict[str, object]] = self._load_catalog()
+            catalog: dict[str, ActionMetadata] = self._load_catalog()
             if action:
                 if action not in catalog:
                     raise HistoryError(
                         "Action is unavailable through this adapter: " + action
                     )
-                return copy.deepcopy(catalog[action])
+                return catalog[action].model_dump()
             return {
                 "actions": [
                     {
                         "name": name,
-                        "description": info["description"][:180],
+                        "description": info.description[:180],
                         "tool": "history_read"
-                        if info["read_only"]
+                        if info.read_only
                         else "history_write",
                     }
                     for name, info in sorted(catalog.items())
@@ -193,30 +194,17 @@ class HistoryClient:
     ) -> tuple[dict[str, object], dict[str, object]]:
         info: dict[str, object] = self.discover(action)
         schema: dict[str, object] = info["input_schema"]
-        errors: list[ValidationError] = sorted(
-            Draft202012Validator(schema).iter_errors(arguments),
-            key=lambda e: str(e.path),
+        values: dict[str, object] = validate_arguments(
+            arguments,
+            schema,
+            LOCAL_REQUESTS.get(action)
+            if action != COMPARE_ACTION or self._legacy_comparison
+            else None,
         )
-        if errors:
-            error: ValidationError = errors[0]
-            path: str = ".".join(map(str, error.path)) or "arguments"
-            raise HistoryError(
-                (
-                    "Invalid "
-                    f"{path}"
-                    ": failed "
-                    f"{error.validator}"
-                    " validation; see history_discover"
-                )
-            )
-        values: dict[str, object] = copy.deepcopy(arguments)
         if action == "agent_set_review":
             values["comment"] = review_comment(values["comment"])
             if not values["comment"]:
                 raise HistoryError(
                     "A non-empty review explanation is required"
                 )
-        for key, prop in schema["properties"].items():
-            if key not in values and "default" in prop:
-                values[key] = prop["default"]
         return (schema, values)

@@ -14,7 +14,6 @@ from history_agent.review.client import ItemClient
 from history_agent.review.journal import Journal
 from history_agent.review.models import ReviewVerdict
 from history_agent.review.response import VerdictResponse
-from history_agent.review.schemas import RESULT_SCHEMA
 from history_agent.review.storage.models import ReviewItem
 from history_agent.runtime.agent import Harness
 from history_agent.runtime.messages import tool_exchange
@@ -52,7 +51,7 @@ class Investigation:
         self.allow_comparison_snapshots()
         reviewer: Harness = self.reviewer_factory(self.client)
         reviewer.reset()
-        reviewer.set_result_schema(RESULT_SCHEMA)
+        reviewer.set_result_schema(ReviewVerdict.model_json_schema())
         reviewer.messages[0]["content"] += " " + prompts.BATCH_INSTRUCTION
         reviewer.messages.append(
             {

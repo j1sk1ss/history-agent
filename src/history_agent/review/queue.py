@@ -2,7 +2,7 @@
 
 from collections.abc import Awaitable, Callable
 
-from history_agent.history.schemas import COMPARE_ACTION
+from history_agent.history.constants import COMPARE_ACTION
 from history_agent.inference.model import ChatError
 from history_agent.review.journal import Journal
 from history_agent.review.storage.models import ReviewItem
