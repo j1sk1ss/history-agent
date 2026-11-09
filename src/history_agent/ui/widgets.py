@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 from rich.markdown import Markdown
@@ -13,18 +15,24 @@ from ..terminal import safe_text
 
 
 class DetailCard(Vertical):
-    def __init__(self, title, text="", *, kind="notice", preview=None):
+    def __init__(
+        self, title: str, text: str = "", *, kind: str = "notice",
+        preview: str | None = None,
+    ) -> None:
         super().__init__(classes="card " + kind)
+        self.heading: str
+        self.text: str
+        self.kind: str
         self.heading, self.text, self.kind = (
             safe_text(title),
             safe_text(text),
             kind,
         )
-        self.preview_override = (
+        self.preview_override: str | None = (
             safe_text(preview) if preview is not None else None
         )
-        self.dirty = True
-        self.active = False
+        self.dirty: bool = True
+        self.active: bool = False
 
     def compose(self) -> ComposeResult:
         yield Static(Text(self.heading), classes="card-title")
@@ -38,18 +46,18 @@ class DetailCard(Vertical):
         else:
             yield Static("", classes="full-text")
 
-    def add_text(self, text):
+    def add_text(self, text: str) -> None:
         self.text += safe_text(text)
         self.dirty = True
 
-    def refresh_content(self):
+    def refresh_content(self) -> None:
         if not self.is_mounted or not self.dirty:
             return
         self.query_one(".card-title", Static).update(Text(self.heading))
-        full = self.query_one(".full-text", Static)
+        full: Static = self.query_one(".full-text", Static)
         if self.kind == "tool":
-            disclosure = self.query_one(Collapsible)
-            lines = (
+            disclosure: Collapsible = self.query_one(Collapsible)
+            lines: list[str] = (
                 (
                     self.preview_override
                     if self.preview_override is not None
@@ -58,7 +66,7 @@ class DetailCard(Vertical):
                 .strip()
                 .splitlines()
             )
-            summary = "\n".join(lines[:4])[:420]
+            summary: str = "\n".join(lines[:4])[:420]
             if len(self.text) > len(summary):
                 summary += " ..."
             self.query_one(".preview", Static).update(
@@ -80,46 +88,52 @@ class DetailCard(Vertical):
         self.dirty = False
 
     @on(Collapsible.Toggled)
-    def on_collapsible_toggled(self, event: Collapsible.Toggled):
+    def on_collapsible_toggled(self, event: Collapsible.Toggled) -> None:
         self.dirty = True
         self.refresh_content()
 
 
 class CommandInput(Input):
-    BINDINGS = [
+    BINDINGS: list[Binding] = [
         Binding("tab", "complete", show=False, priority=True),
         Binding("up", "previous_input", show=False, priority=True),
         Binding("down", "next_input", show=False, priority=True),
     ]
 
-    def __init__(self, state_dir):
+    def __init__(self, state_dir: str | Path) -> None:
         super().__init__(
             placeholder="Ask about code or paste a history link…",
             id="composer",
         )
-        self.state_dir = Path(state_dir)
+        self.state_dir: Path = Path(state_dir)
+        self.history: list[str]
+        self.history_index: int
+        self.draft: str
         self.history, self.history_index, self.draft = [], 0, ""
+        self.completions: list[str]
+        self.complete_index: int
+        self.completed_value: str | None
         self.completions, self.complete_index, self.completed_value = (
             [],
             0,
             None,
         )
 
-    def remember(self, text):
+    def remember(self, text: str) -> None:
         if not self.history or self.history[-1] != text:
             self.history.append(text)
             self.history = self.history[-100:]
         self.history_index = len(self.history)
 
-    def action_previous_input(self):
+    def action_previous_input(self) -> None:
         if self.history and self.history_index > 0:
             if self.history_index == len(self.history):
                 self.draft = self.value
             self.history_index -= 1
             self.value = self.history[self.history_index]
-            self.cursor_position = len(self.value)
+            self.cursor_position: int = len(self.value)
 
-    def action_next_input(self):
+    def action_next_input(self) -> None:
         if self.history_index < len(self.history):
             self.history_index += 1
             self.value = (
@@ -129,7 +143,7 @@ class CommandInput(Input):
             )
             self.cursor_position = len(self.value)
 
-    def action_complete(self):
+    def action_complete(self) -> None:
         if not self.value.startswith("/"):
             self.app.action_focus_next()
             return
@@ -139,11 +153,14 @@ class CommandInput(Input):
             )
             self.value = self.completions[self.complete_index]
         else:
-            before = self.value[: self.cursor_position]
+            before: str = self.value[: self.cursor_position]
+            head: str
+            sep: str
+            prefix: str
             head, sep, prefix = before.rpartition(" ")
             if not sep:
                 head, prefix = "", before
-                options = list(COMMANDS)
+                options: list[str] = list(COMMANDS)
             elif head.strip() == "/resume":
                 options = sorted(
                     path.stem
@@ -154,12 +171,12 @@ class CommandInput(Input):
                 options = ["appeared", "disappeared", "both"]
             else:
                 return
-            matches = [
+            matches: list[str] = [
                 option for option in options if option.startswith(prefix)
             ]
             if not matches:
                 return
-            base = head + " " if sep else ""
+            base: str = head + " " if sep else ""
             self.completions = [base + match for match in matches]
             self.complete_index = 0
             self.value = self.completions[0]

@@ -1,15 +1,24 @@
+from __future__ import annotations
+
 import asyncio
+from argparse import Namespace
 from contextlib import suppress
 
+from mcp import Client
+
+from ..client import HistoryClient
+from ..model import Model
 from .app import HistoryApp
 
 
-async def run_tui(client, model, args, history):
+async def run_tui(
+    client: Client, model: Model, args: Namespace, history: HistoryClient,
+) -> dict[str, Namespace | str | None] | None:
     from ..session import converse
 
-    app = HistoryApp(args)
+    app: HistoryApp = HistoryApp(args)
 
-    async def backend():
+    async def backend() -> None:
         await app.ready.wait()
         try:
             await converse(
@@ -20,7 +29,7 @@ async def run_tui(client, model, args, history):
         finally:
             app.adapter.event("backend_done")
 
-    task = asyncio.create_task(backend())
+    task: asyncio.Task[None] = asyncio.create_task(backend())
     try:
         return await app.run_async()
     finally:

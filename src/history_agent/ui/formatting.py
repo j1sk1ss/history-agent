@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import json
 
 from ..terminal import safe_text
 
 
-def pretty(value):
+def pretty(value: object) -> str:
     if isinstance(value, str):
         try:
             value = json.loads(value)
@@ -12,9 +14,9 @@ def pretty(value):
     return safe_text(json.dumps(value, ensure_ascii=False, indent=2))
 
 
-def tool_preview(response):
+def tool_preview(response: str) -> str:
     try:
-        value = json.loads(response)
+        value: object = json.loads(response)
     except (ValueError, TypeError):
         return safe_text(response)[:300]
     if isinstance(value, dict):
@@ -25,14 +27,14 @@ def tool_preview(response):
                 if isinstance(line, dict)
             )[:360]
         if isinstance(value.get("warnings"), list):
-            names = ", ".join(
+            names: str = ", ".join(
                 str(w.get("checker_name", w.get("warning_id", "")))
                 for w in value["warnings"][:3]
                 if isinstance(w, dict)
             )
-            total = value.get("total", len(value["warnings"]))
+            total: int = value.get("total", len(value["warnings"]))
             return f"Warnings: {total} · {names}"
-        doc = value.get("documentation")
+        doc: dict[str, object] = value.get("documentation")
         if isinstance(doc, dict):
             return (
                 str(value.get("checker_name", ""))

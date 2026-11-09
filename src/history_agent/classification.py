@@ -1,4 +1,4 @@
-STATUSES = {
+STATUSES: dict[str, str] = {
     "TP": "Confirmed",
     "FP": "False Positive",
     "WF": "Won't fix",
@@ -6,10 +6,10 @@ STATUSES = {
     "UD": "Undecided",
 }
 
-EVIDENCE_REQUIRED = frozenset(("TP", "FP", "WF"))
-PATTERN_CLASSES = frozenset(("TP", "FP", "WF"))
+EVIDENCE_REQUIRED: frozenset[str] = frozenset(("TP", "FP", "WF"))
+PATTERN_CLASSES: frozenset[str] = frozenset(("TP", "FP", "WF"))
 
-CORE_CRITERIA = (
+CORE_CRITERIA: str = (
     "TP: checker condition is true and relevant. FP: checker "
     "condition is false. "
     "WF: Technically is a correct work of the checker "
@@ -18,7 +18,7 @@ CORE_CRITERIA = (
     "UC: evidence is insufficient. UD: undecided."
 )
 
-REVIEW_CRITERIA = (
+REVIEW_CRITERIA: str = (
     "TP: the checker-reported condition actually holds and is "
     "meaningful or actionable in this project. "
     "FP: the checker-reported condition does not hold; prove the "

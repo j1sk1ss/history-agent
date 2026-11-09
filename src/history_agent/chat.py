@@ -3,7 +3,7 @@ from .cli import main, model_base, parse_args, run
 from .model import ChatError, Model
 from .session import converse, pretty_json_text
 
-__all__ = [
+__all__: list[str] = [
     "BATCH_HINT",
     "SYSTEM",
     "Harness",

@@ -1,32 +1,38 @@
 """Bounded Chat Completions transport with incremental SSE events."""
 
+from __future__ import annotations
+
 import http.client
 import json
 import urllib.error
 import urllib.request
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from http.client import HTTPResponse
 
 from .client import NoRedirects
 
-MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+MAX_RESPONSE_BYTES: int = 2 * 1024 * 1024
 
 
 class ChatError(Exception):
     pass
 
 
-def compact(value):
+def compact(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
-def sse_events(response):
+def sse_events(response: HTTPResponse) -> Iterator[str]:
     """
     Read UTF-8 SSE records, including multiline data and a final
     unseparated record.
     """
+    total: int
+    data: list[str]
     total, data = 0, []
     while True:
-        raw = response.readline(MAX_RESPONSE_BYTES + 1)
+        raw: bytes = response.readline(MAX_RESPONSE_BYTES + 1)
         total += len(raw)
         if total > MAX_RESPONSE_BYTES:
             raise ChatError(
@@ -36,7 +42,7 @@ def sse_events(response):
             if data:
                 yield "\n".join(data)
             return
-        line = raw.decode(
+        line: str = raw.decode(
             "utf-8-sig" if total == len(raw) else "utf-8"
         ).rstrip("\r\n")
         if not line:
@@ -44,32 +50,37 @@ def sse_events(response):
                 yield "\n".join(data)
                 data = []
         elif line.startswith("data:"):
-            value = line[5:]
+            value: str = line[5:]
             data.append(value[1:] if value.startswith(" ") else value)
 
 
 class CompletionStream:
-    def __init__(self, emit):
-        self.emit = emit
+    def __init__(self, emit: Callable[..., None]) -> None:
+        self.emit: Callable[..., None] = emit
+        self.content: list[str]
+        self.reasoning: list[str]
+        self.calls: dict[int, dict[str, object]]
         self.content, self.reasoning, self.calls = [], [], {}
+        self.finish_reason: str | None
+        self.usage: dict[str, object] | None
         self.finish_reason, self.usage = None, None
 
-    def feed(self, chunk):
+    def feed(self, chunk: dict[str, object]) -> None:
         if not isinstance(chunk, dict) or "error" in chunk:
             raise ValueError()
-        usage = chunk.get("usage")
+        usage: dict[str, object] | None = chunk.get("usage")
         if isinstance(usage, dict):
             self.usage = usage
             self.emit("usage", usage=usage)
-        choices = chunk.get("choices", [])
+        choices: list[dict[str, object]] = chunk.get("choices", [])
         if not isinstance(choices, list) or len(choices) > 1:
             raise ValueError()
         if not choices:
             return
-        choice = choices[0]
+        choice: dict[str, object] = choices[0]
         if choice.get("index", 0) != 0:
             raise ValueError()
-        delta = choice.get("delta", {})
+        delta: dict[str, object] = choice.get("delta", {})
         if (
             not isinstance(delta, dict)
             or delta.get("role", "assistant") != "assistant"
@@ -89,7 +100,7 @@ class CompletionStream:
             ("content", self.content, "content"),
             ("reasoning_content", self.reasoning, "reasoning"),
         ):
-            text = delta.get(field)
+            text: str | None = delta.get(field)
             if field == "reasoning_content" and text is None:
                 text = delta.get("reasoning")
             if text is not None:
@@ -98,18 +109,18 @@ class CompletionStream:
                 destination.append(text)
                 if text:
                     self.emit(event, text=text)
-        calls = delta.get("tool_calls") or []
+        calls: list[dict[str, object]] = delta.get("tool_calls") or []
         if not isinstance(calls, list):
             raise ValueError()
         for part in calls:
-            index = part["index"]
+            index: int = part["index"]
             if (
                 isinstance(index, bool)
                 or not isinstance(index, int)
                 or not 0 <= index < 8
             ):
                 raise ValueError()
-            target = self.calls.setdefault(
+            target: dict[str, object] = self.calls.setdefault(
                 index,
                 {
                     "id": "",
@@ -123,24 +134,24 @@ class CompletionStream:
                 if not isinstance(part["id"], str):
                     raise ValueError()
                 target["id"] += part["id"]
-            function = part.get("function") or {}
+            function: dict[str, object] = part.get("function") or {}
             if not isinstance(function, dict):
                 raise ValueError()
             for key in ("name", "arguments"):
-                value = function.get(key)
+                value: str | None = function.get(key)
                 if value is not None:
                     if not isinstance(value, str):
                         raise ValueError()
                     target["function"][key] += value
                     if value:
                         self.emit("tool_delta", text=value)
-        reason = choice.get("finish_reason")
+        reason: str | None = choice.get("finish_reason")
         if reason is not None:
             if not isinstance(reason, str):
                 raise ValueError()
             self.finish_reason = reason
 
-    def result(self):
+    def result(self) -> dict[str, object]:
         if self.finish_reason not in (
             "stop",
             "tool_calls",
@@ -160,7 +171,7 @@ class CompletionStream:
                 "Model stream has inconsistent tool calls; no tools from this"
                 " response were executed"
             )
-        message = {
+        message: dict[str, object] = {
             "role": "assistant",
             "content": "".join(self.content) or None,
         }
@@ -190,8 +201,12 @@ class Model:
     stream_usage: bool = True
     provider: str = "openai-compatible"
 
-    def complete(self, messages, tools, on_event=None):
-        emit = on_event or (lambda *args, **kwargs: None)
+    def complete(
+        self, messages: list[dict[str, object]],
+        tools: list[dict[str, object]],
+        on_event: Callable[..., None] | None = None,
+    ) -> dict[str, object]:
+        emit: Callable[..., None] = on_event or (lambda *args, **kwargs: None)
         if self.provider in (
             "anthropic",
             "claude",
@@ -202,7 +217,7 @@ class Model:
             from .providers import complete_native
 
             return complete_native(self, messages, tools, emit)
-        payload = {
+        payload: dict[str, object] = {
             "model": self.name,
             "messages": messages,
             "tools": tools,
@@ -213,34 +228,36 @@ class Model:
             payload["stream_options"] = {"include_usage": True}
         if self.no_thinking:
             payload["chat_template_kwargs"] = {"enable_thinking": False}
-        headers = {
+        headers: dict[str, str] = {
             "Content-Type": "application/json",
             "Accept": "text/event-stream, application/json",
         }
         if self.key:
             headers["Authorization"] = "Bearer " + self.key
-        request = urllib.request.Request(
+        request: urllib.request.Request = urllib.request.Request(
             self.base + "/chat/completions",
             data=compact(payload).encode("utf-8"),
             headers=headers,
         )
-        opener = urllib.request.build_opener(NoRedirects())
+        opener: urllib.request.OpenerDirector = urllib.request.build_opener(
+            NoRedirects()
+        )
         try:
             with opener.open(request, timeout=self.timeout) as response:
                 if response.headers.get_content_type() == "text/event-stream":
-                    stream = CompletionStream(emit)
+                    stream: CompletionStream = CompletionStream(emit)
                     for data in sse_events(response):
                         if data.strip() == "[DONE]":
                             break
                         stream.feed(json.loads(data))
                     return stream.result()
-                raw = response.read(MAX_RESPONSE_BYTES + 1)
+                raw: bytes = response.read(MAX_RESPONSE_BYTES + 1)
                 if len(raw) > MAX_RESPONSE_BYTES:
                     raise ChatError(
                         "Model response exceeds 2 MiB; lower "
                         "--max-output-tokens"
                     )
-                result = json.loads(raw)
+                result: dict[str, object] = json.loads(raw)
                 if not isinstance(result, dict) or not isinstance(
                     result.get("choices"), list
                 ):
@@ -248,12 +265,14 @@ class Model:
                 # Some compatible servers return a whole JSON response even
                 # when stream=true.
                 if len(result["choices"]) == 1:
-                    message = result["choices"][0].get("message", {})
+                    message: dict[str, object] = result["choices"][0].get(
+                        "message", {}
+                    )
                     for field, kind in (
                         ("reasoning_content", "reasoning"),
                         ("content", "content"),
                     ):
-                        text = message.get(field)
+                        text: str | None = message.get(field)
                         if field == "reasoning_content" and text is None:
                             text = message.get("reasoning")
                         if isinstance(text, str):

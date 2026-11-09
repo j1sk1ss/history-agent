@@ -1,62 +1,71 @@
+from __future__ import annotations
+
 import asyncio
+from collections.abc import Coroutine
 
 from textual.message import Message
 
+from . import app as history_app
+
 
 class BackendEvent(Message):
-    def __init__(self, kind, data):
+    def __init__(self, kind: str, data: dict[str, object]) -> None:
         super().__init__()
+        self.kind: str
+        self.data: dict[str, object]
         self.kind, self.data = kind, data
 
 
 class DisplayConsole:
-    def __init__(self, adapter):
-        self.adapter = adapter
+    def __init__(self, adapter: UIAdapter) -> None:
+        self.adapter: UIAdapter = adapter
 
-    def print(self, text="", **kwargs):
+    def print(self, text: object = "", **kwargs: object) -> None:
         self.adapter.event("notice", text=str(text))
 
 
 class UIAdapter:
-    async_prompt = True
+    async_prompt: bool = True
 
-    def __init__(self, app):
+    def __init__(self, app: history_app.HistoryApp) -> None:
+        self.app: history_app.HistoryApp
+        self.work: asyncio.Task[None] | None
         self.app, self.work = app, None
-        self.last_error = None
-        self.console = DisplayConsole(self)
+        self.last_error: str | None = None
+        self.console: DisplayConsole = DisplayConsole(self)
 
-    def event(self, kind, **data):
+    def event(self, kind: str, **data: object) -> None:
         if kind == "begin":
             self.last_error = None
         if kind == "failure" or (kind == "notice" and data.get("error")):
-            message = data.get("message", data.get("text", ""))
+            message: str = data.get("message", data.get("text", ""))
             if message == self.last_error:
                 return
             self.last_error = message
         self.app.post_message(BackendEvent(kind, data))
 
-    def welcome(self, context):
+    def welcome(self, context: int) -> None:
         self.event("welcome", context=context)
 
-    def begin(self, prompt):
+    def begin(self, prompt: str) -> None:
         self.event("begin", text=prompt)
 
-    def finish(self, answer=None):
+    def finish(self, answer: str | None = None) -> None:
         self.event("finish", answer=answer)
 
-    def reset(self):
+    def reset(self) -> None:
         self.event(
             "notice", text="Model context cleared. Session usage preserved."
         )
 
-    def error_message(self, text):
+    def error_message(self, text: str) -> None:
         self.event("notice", text=text, error=True)
 
-    async def prompt_async(self):
+    async def prompt_async(self) -> str:
         self.event("input_ready")
         return await self.app.inputs.get()
 
-    async def execute(self, operation):
+    async def execute(self, operation: Coroutine[None, None, None]) -> None:
         self.work = asyncio.create_task(operation)
         try:
             return await self.work

@@ -3,8 +3,12 @@ Read a single verdict object without accepting ambiguous or nested
 examples.
 """
 
+from __future__ import annotations
+
 import copy
 import json
+
+from jsonschema import Draft202012Validator
 
 from .comments import short_path
 from .model import ChatError
@@ -14,17 +18,23 @@ class VerdictFormatError(ChatError):
     pass
 
 
-FINAL_TOOL = "submit_verdict"
+FINAL_TOOL: str = "submit_verdict"
 
 
-def normalize_verdict(value, observed, scope, warning_id, checker, statuses):
+def normalize_verdict(
+    value: dict[str, object], observed: set[tuple[str, int, str]],
+    scope: dict[str, str | int], warning_id: str, checker: str,
+    statuses: dict[str, str],
+) -> dict[str, object]:
     """
     Normalize representation only; never choose a verdict or fabricate a
     source address.
     """
-    result = copy.deepcopy(value)
+    result: dict[str, object] = copy.deepcopy(value)
 
-    def aliases(mapping, target, alternatives):
+    def aliases(
+        mapping: dict[str, object], target: str, alternatives: tuple[str, ...],
+    ) -> None:
         for key in alternatives:
             if key in mapping:
                 if target not in mapping:
@@ -36,9 +46,9 @@ def normalize_verdict(value, observed, scope, warning_id, checker, statuses):
     aliases(result, "comment", ("reason", "rationale", "explanation"))
     aliases(result, "evidence", ("source_evidence", "locations"))
     if isinstance(result.get("classification"), str):
-        names = {key.casefold(): key for key in statuses}
+        names: dict[str, str] = {key.casefold(): key for key in statuses}
         names.update({name.casefold(): key for key, name in statuses.items()})
-        name = result["classification"].strip()
+        name: str = result["classification"].strip()
         result["classification"] = names.get(name.casefold(), name)
     if isinstance(result.get("comment"), str):
         result["comment"] = result["comment"].strip()
@@ -48,8 +58,8 @@ def normalize_verdict(value, observed, scope, warning_id, checker, statuses):
         "checker_name": checker,
     }.items():
         if key in result:
-            actual = result[key]
-            matches = (
+            actual: object = result[key]
+            matches: bool = (
                 isinstance(actual, str)
                 and actual.casefold() == checker.casefold()
                 if key == "checker_name"
@@ -69,12 +79,12 @@ def normalize_verdict(value, observed, scope, warning_id, checker, statuses):
             aliases(address, "file", ("file_path", "path"))
             aliases(address, "line", ("line_number",))
             aliases(address, "snapshot_id", ("snapshot", "snapshotId"))
-            line = address.get("line")
+            line: str | int | None = address.get("line")
             if isinstance(line, str) and line.isascii() and line.isdigit():
                 address["line"] = int(line)
-            file = address.get("file")
+            file: str | None = address.get("file")
             if isinstance(file, str) and isinstance(address.get("line"), int):
-                candidates = {
+                candidates: set[tuple[str, str]] = {
                     (path, snapshot)
                     for path, number, snapshot in observed
                     if number == address["line"]
@@ -91,7 +101,7 @@ def normalize_verdict(value, observed, scope, warning_id, checker, statuses):
             if address.get("snapshot_id") in (None, "") and isinstance(
                 address.get("line"), int
             ):
-                snapshots = {
+                snapshots: set[str] = {
                     snapshot
                     for file, line, snapshot in observed
                     if file == address.get("file") and line == address["line"]
@@ -101,10 +111,12 @@ def normalize_verdict(value, observed, scope, warning_id, checker, statuses):
     return result
 
 
-def schema_issues(value, validator):
-    issues = []
+def schema_issues(
+    value: dict[str, object], validator: Draft202012Validator,
+) -> list[str]:
+    issues: list[str] = []
     for error in validator.iter_errors(value):
-        path = ".".join(map(str, error.absolute_path)) or "verdict"
+        path: str = ".".join(map(str, error.absolute_path)) or "verdict"
         issues.append(path + ": " + error.message[:300])
         if len(issues) == 5:
             break
@@ -117,8 +129,8 @@ def schema_issues(value, validator):
     return issues
 
 
-def unique_keys(pairs):
-    result = {}
+def unique_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
     for key, value in pairs:
         if key in result:
             raise ValueError("Duplicate JSON key")
@@ -126,21 +138,23 @@ def unique_keys(pairs):
     return result
 
 
-def extract_verdict(raw):
-    text = raw.strip()
+def extract_verdict(raw: str) -> dict[str, object]:
+    text: str = raw.strip()
     # Some models emit reasoning tags in content instead of reasoning_content.
     if text.startswith("<think>"):
-        end = text.find("</think>")
+        end: int = text.find("</think>")
         if end < 0:
             raise VerdictFormatError(
                 "Batch response contains unfinished reasoning, not a verdict"
             )
-        reasoning_end = end + len("</think>")
+        reasoning_end: int = end + len("</think>")
         text = text[reasoning_end:].lstrip()
-    decoder = json.JSONDecoder(object_pairs_hook=unique_keys)
-    candidates = []
-    start = None
-    depth = 0
+    decoder: json.JSONDecoder = json.JSONDecoder(object_pairs_hook=unique_keys)
+    candidates: list[dict[str, object]] = []
+    start: int | None = None
+    depth: int = 0
+    quoted: bool
+    escaped: bool
     quoted = escaped = False
     for index, char in enumerate(text):
         if start is None:
@@ -163,10 +177,10 @@ def extract_verdict(raw):
             depth -= 1
             if depth == 0:
                 end = index + 1
-                fragment = text[start:end]
+                fragment: str = text[start:end]
                 start = None
                 try:
-                    value = decoder.decode(fragment)
+                    value: dict[str, object] = decoder.decode(fragment)
                 except ValueError:
                     continue
                 if (

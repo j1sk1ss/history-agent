@@ -6,11 +6,12 @@ import json
 import math
 import os
 import re
+from argparse import Namespace
 from pathlib import Path
 
 from .setup import private_write, valid_url
 
-PROVIDER_DEFAULTS = {
+PROVIDER_DEFAULTS: dict[str, str] = {
     "ollama": "http://127.0.0.1:11434/v1",
     "llama": "http://127.0.0.1:8000/v1",
     "deepseek": "https://api.deepseek.com/v1",
@@ -20,7 +21,7 @@ PROVIDER_DEFAULTS = {
     "claude": "https://api.anthropic.com/v1",
     "gemini": "https://generativelanguage.googleapis.com/v1beta",
 }
-PROVIDER_KEYS = {
+PROVIDER_KEYS: dict[str, str] = {
     "deepseek": "DEEPSEEK_API_KEY",
     "openai-responses": "OPENAI_API_KEY",
     "codex": "OPENAI_API_KEY",
@@ -28,9 +29,9 @@ PROVIDER_KEYS = {
     "claude": "ANTHROPIC_API_KEY",
     "gemini": "GEMINI_API_KEY",
 }
-PROVIDERS = ("openai-compatible", *PROVIDER_DEFAULTS)
-LOCAL_PROVIDERS = ("openai-compatible", "ollama", "llama")
-TEXT_FIELDS = (
+PROVIDERS: tuple[str, ...] = ("openai-compatible", *PROVIDER_DEFAULTS)
+LOCAL_PROVIDERS: tuple[str, ...] = ("openai-compatible", "ollama", "llama")
+TEXT_FIELDS: tuple[str, ...] = (
     "provider",
     "model_url",
     "model",
@@ -39,7 +40,7 @@ TEXT_FIELDS = (
     "history_user",
     "history_password",
 )
-BOOL_FIELDS = (
+BOOL_FIELDS: tuple[str, ...] = (
     "allow_write",
     "no_thinking",
     "no_stream",
@@ -47,25 +48,29 @@ BOOL_FIELDS = (
     "stats",
     "no_patterns",
 )
-LIMIT_FIELDS = (
+LIMIT_FIELDS: tuple[str, ...] = (
     "max_steps",
     "max_output_tokens",
     "max_context_bytes",
     "max_tool_result_bytes",
     "timeout",
 )
-SAVED_FIELDS = (*TEXT_FIELDS, *BOOL_FIELDS, *LIMIT_FIELDS)
+SAVED_FIELDS: tuple[str, ...] = (*TEXT_FIELDS, *BOOL_FIELDS, *LIMIT_FIELDS)
 
 
-def config_path():
-    override = os.environ.get("HISTORY_AGENT_CONFIG")
+def config_path() -> Path:
+    override: str | None = os.environ.get("HISTORY_AGENT_CONFIG")
     if override:
         return Path(override).expanduser()
-    root = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    root: Path = Path(
+        os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config"
+    )
     return root / "history-agent" / "config.json"
 
 
-def validate_defaults(values):
+def validate_defaults(
+    values: dict[str, str | bool | int | float | None],
+) -> dict[str, str | bool | int | float | None]:
     if not isinstance(values, dict) or set(values) - set(SAVED_FIELDS):
         raise ValueError(
             "Expected chat settings; unknown configuration fields"
@@ -80,14 +85,16 @@ def validate_defaults(values):
         if name in BOOL_FIELDS and type(value) is not bool:
             raise ValueError(f"{name} must be true or false")
         if name in LIMIT_FIELDS:
-            expected = (int, float) if name == "timeout" else (int,)
+            expected: tuple[type[int] | type[float], ...] = (
+                (int, float) if name == "timeout" else (int,)
+            )
             if (
                 type(value) not in expected
                 or value <= 0
                 or (name == "timeout" and not math.isfinite(value))
             ):
                 raise ValueError(f"{name} must be positive")
-    provider = values.get("provider", "openai-compatible")
+    provider: str = values.get("provider", "openai-compatible")
     if provider not in PROVIDERS:
         raise ValueError("Unknown model provider")
     for name in ("model_url", "history_url"):
@@ -110,8 +117,8 @@ def validate_defaults(values):
     return values
 
 
-def load_defaults():
-    path = config_path()
+def load_defaults() -> dict[str, str | bool | int | float | None]:
+    path: Path = config_path()
     if not path.exists():
         return {}
     try:
@@ -122,12 +129,12 @@ def load_defaults():
         ) from None
 
 
-def save_defaults(args):
+def save_defaults(args: Namespace) -> None:
     # Commands, prompts, UI flags and job scope are never persisted.
-    values = validate_defaults(
+    values: dict[str, str | bool | int | float | None] = validate_defaults(
         {name: getattr(args, name) for name in SAVED_FIELDS}
     )
-    path = config_path()
+    path: Path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     private_write(
         path,

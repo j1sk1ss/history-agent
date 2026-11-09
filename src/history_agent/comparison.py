@@ -3,10 +3,14 @@ Explicit current/base comparison, including a bridge for older history
 servers.
 """
 
+from __future__ import annotations
+
 import copy
 
-COMPARE_ACTION = "agent_compare_warnings"
-COMPARE_SCHEMA = {
+from . import client as history_client
+
+COMPARE_ACTION: str = "agent_compare_warnings"
+COMPARE_SCHEMA: dict[str, object] = {
     "type": "object",
     "additionalProperties": False,
     "required": ["project_id", "stream_id", "snapshot_id", "base_snapshot_id"],
@@ -40,7 +44,7 @@ COMPARE_SCHEMA = {
         },
     },
 }
-COMPARE_META = {
+COMPARE_META: dict[str, object] = {
     "name": COMPARE_ACTION,
     "read_only": True,
     "input_schema": COMPARE_SCHEMA,
@@ -54,11 +58,13 @@ COMPARE_META = {
 }
 
 
-def scopes(values):
-    current = {
+def scopes(
+    values: dict[str, str | int],
+) -> tuple[dict[str, str | int], dict[str, str | int]]:
+    current: dict[str, str | int] = {
         key: values[key] for key in ("project_id", "stream_id", "snapshot_id")
     }
-    base = {
+    base: dict[str, str | int] = {
         "project_id": values.get("base_project_id", current["project_id"]),
         "stream_id": values.get("base_stream_id", current["stream_id"]),
         "snapshot_id": values["base_snapshot_id"],
@@ -66,28 +72,39 @@ def scopes(values):
     return current, base
 
 
-def legacy_compare(client, values, error_type):
+def legacy_compare(
+    client: history_client.HistoryClient, values: dict[str, str | int],
+    error_type: type[Exception],
+) -> dict[str, object]:
     """
     Legacy HTTP firstOnly is UI Second: performComparison reverses its
     inputs.
     """
+    current: dict[str, str | int]
+    base: dict[str, str | int]
     current, base = scopes(values)
-    query = {key + "_1": value for key, value in current.items()}
+    query: dict[str, str | int] = {
+        key + "_1": value for key, value in current.items()
+    }
     query.update({key + "_2": value for key, value in base.items()})
-    result = client._call("get_warnings_compare_svace2svace", query)
+    result: dict[str, object] = client._call(
+        "get_warnings_compare_svace2svace", query
+    )
     if any(
         not isinstance(result.get(key), list)
         for key in ("firstOnly", "secondOnly", "common")
     ):
         raise error_type("Invalid legacy comparison response")
-    catalogs = {}
+    catalogs: dict[tuple[tuple[str, str | int], ...], dict[str, str]] = {}
 
-    def normalize(warning, scope):
-        data = copy.deepcopy(warning)
+    def normalize(
+        warning: dict[str, object], scope: dict[str, str | int],
+    ) -> dict[str, object]:
+        data: dict[str, object] = copy.deepcopy(warning)
         if not data.get("checker_name"):
-            key = tuple(scope.items())
+            key: tuple[tuple[str, str | int], ...] = tuple(scope.items())
             if key not in catalogs:
-                catalog = client._call(
+                catalog: dict[str, object] = client._call(
                     "get_value_filter", {**scope, "field": "warn_types"}
                 )
                 catalogs[key] = {
@@ -95,7 +112,7 @@ def legacy_compare(client, values, error_type):
                     for group in catalog.get("checker_groups", [])
                     for checker in group["checkers"]
                 }
-            name = catalogs[key].get(str(data.get("checker_id")))
+            name: str | None = catalogs[key].get(str(data.get("checker_id")))
             if not name:
                 raise error_type(
                     "Comparison warning has no resolvable checker name"
@@ -108,15 +125,17 @@ def legacy_compare(client, values, error_type):
             raise error_type("Comparison warning has no history identity")
         return data
 
-    subset = values["subset"]
-    scope = base if subset == "disappeared" else current
-    selected = {}
+    subset: str = values["subset"]
+    scope: dict[str, str | int] = base if subset == "disappeared" else current
+    selected: dict[str, dict[str, object]] = {}
     if subset == "both":
         for pair in result["common"]:
             # Legacy pair.second is the current warning, pair.first is
             # baseline.
-            data = normalize(pair["second"], current)
-            entry = selected.setdefault(data["warning_id"], data)
+            data: dict[str, object] = normalize(pair["second"], current)
+            entry: dict[str, object] = selected.setdefault(
+                data["warning_id"], data
+            )
             entry.setdefault("counterparts", []).append(
                 {
                     "warning": normalize(pair["first"], base),
@@ -133,8 +152,8 @@ def legacy_compare(client, values, error_type):
         ]:
             data = normalize(warning, scope)
             selected[data["warning_id"]] = data
-    checker = values.get("checker_name")
-    warnings = [
+    checker: str | None = values.get("checker_name")
+    warnings: list[dict[str, object]] = [
         data
         for data in selected.values()
         if not checker or data["checker_name"].casefold() == checker.casefold()
@@ -147,9 +166,11 @@ def legacy_compare(client, values, error_type):
             data["warning_id"],
         )
     )
+    offset: int
+    limit: int
     offset, limit = values["offset"], values["limit"]
-    end = min(len(warnings), offset + limit)
-    page = {
+    end: int = min(len(warnings), offset + limit)
+    page: dict[str, object] = {
         "current": current,
         "base": base,
         "scope": scope,

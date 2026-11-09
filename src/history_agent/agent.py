@@ -5,12 +5,17 @@ import json
 import sys
 import threading
 import time
+from collections.abc import Callable, Sequence
 
+from mcp import Client
+from mcp.types import CallToolResult, Tool
+
+from . import batch
 from .classification import CORE_CRITERIA
-from .model import ChatError, compact
+from .model import ChatError, Model, compact
 from .verdict import FINAL_TOOL
 
-SYSTEM = (
+SYSTEM: str = (
     "Review Svace warnings with history tools. Follow these steps:\n"
     "1. Select scope. For a history link, use the host's "
     "agent_resolve_history_url result and its read/review "
@@ -51,11 +56,11 @@ SYSTEM = (
     "Inspect review history before retrying an uncertain write. "
     "Keep final reports concise."
 )
-BATCH_HINT = (
+BATCH_HINT: str = (
     " For a whole-project or multi-warning review, discover the "
-    "local review_batch action and use it "
+    "local `review_batch` action and use it "
     "instead of accumulating all warnings here. An unscoped "
-    "review_batch uses current automatically. For a snapshot "
+    "`review_batch` uses current automatically. For a snapshot "
     "difference or a UI comparison link, "
     "discover review_diff: specify current/base snapshots, "
     "default subset appeared (UI First); "
@@ -66,28 +71,35 @@ BATCH_HINT = (
 )
 
 
-async def complete_model(model, messages, tools, on_event):
+async def complete_model(
+    model: Model, messages: list[dict[str, object]],
+    tools: list[dict[str, object]], on_event: Callable[..., None],
+) -> dict[str, object]:
     """
     Do not make Ctrl+C wait for a blocked urllib worker to hit its socket
     timeout.
     """
-    loop = asyncio.get_running_loop()
-    result = loop.create_future()
-    stopped = threading.Event()
+    loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
+    result: asyncio.Future[dict[str, object]] = loop.create_future()
+    stopped: threading.Event = threading.Event()
 
-    def deliver(value, error):
+    def deliver(
+        value: dict[str, object] | None, error: BaseException | None,
+    ) -> None:
         if not result.done():
             if error is None:
                 result.set_result(value)
             else:
                 result.set_exception(error)
 
-    def emit(kind, **data):
+    def emit(kind: str, **data: object) -> None:
         if stopped.is_set():
             raise ChatError("Model request cancelled")
         on_event(kind, **data)
 
-    def worker():
+    def worker() -> None:
+        value: dict[str, object] | None
+        error: BaseException | None
         value = error = None
         try:
             value = model.complete(messages, tools, emit)
@@ -109,25 +121,22 @@ async def complete_model(model, messages, tools, on_event):
 
 class Harness:
     def __init__(
-        self,
-        client,
-        model,
-        tools,
-        *,
-        allow_write=False,
-        max_steps=12,
-        max_context_bytes=65536,
-        max_tool_result_bytes=16384,
-        stats=False,
-        on_event=None,
-    ):
-        self.client, self.model = client, model
-        self.on_event = on_event
-        self.allow_write = allow_write
-        allowed = {"history_discover", "history_read", "history_current"} | (
-            {"history_write"} if allow_write else set()
-        )
-        self.tools = [
+        self, client: Client | batch.BatchRouter | batch.ItemClient,
+        model: Model, tools: list[Tool], *, allow_write: bool = False,
+        max_steps: int = 12, max_context_bytes: int = 65536,
+        max_tool_result_bytes: int = 16384, stats: bool = False,
+        on_event: Callable[..., None] | None = None,
+    ) -> None:
+        self.client: Client | batch.BatchRouter | batch.ItemClient = client
+        self.model: Model = model
+        self.on_event: Callable[..., None] | None = on_event
+        self.allow_write: bool = allow_write
+        allowed: set[str] = {
+            "history_discover",
+            "history_read",
+            "history_current",
+        } | ({"history_write"} if allow_write else set())
+        self.tools: list[dict[str, object]] = [
             {
                 "type": "function",
                 "function": {
@@ -139,17 +148,23 @@ class Harness:
             for tool in tools
             if tool.name in allowed
         ]
-        self.allowed = {tool["function"]["name"] for tool in self.tools}
+        self.allowed: set[str] = {
+            tool["function"]["name"] for tool in self.tools
+        }
         if not {"history_discover", "history_read"} <= self.allowed:
             raise ChatError(
                 "MCP server must provide history_discover and history_read"
             )
+        self.max_steps: int
+        self.max_context_bytes: int
         self.max_steps, self.max_context_bytes = max_steps, max_context_bytes
+        self.max_tool_result_bytes: int
+        self.stats: bool
         self.max_tool_result_bytes, self.stats = max_tool_result_bytes, stats
-        self.result_tool = None
+        self.result_tool: str | None = None
         self.reset()
 
-    def set_result_schema(self, schema):
+    def set_result_schema(self, schema: dict[str, object]) -> None:
         self.result_tool = FINAL_TOOL
         self.tools = [
             tool
@@ -173,30 +188,38 @@ class Harness:
         )
         self.allowed.add(FINAL_TOOL)
 
-    def reset(self):
-        mode = (
+    def reset(self) -> None:
+        mode: str = (
             "Review writes are enabled, but require the user's request."
             if self.allow_write
             else "This session is read-only. Review writes are disabled."
         )
-        self.messages = [{"role": "system", "content": SYSTEM + " " + mode}]
-        self.blocked = False
+        self.messages: list[dict[str, object]] = [
+            {"role": "system", "content": SYSTEM + " " + mode}
+        ]
+        self.blocked: bool = False
 
-    def context_bytes(self):
-
+    def context_bytes(self) -> int:
         return len(
             compact({"messages": self.messages, "tools": self.tools}).encode(
                 "utf-8"
             )
         )
 
-    def emit(self, kind, **data):
+    def emit(self, kind: str, **data: object) -> None:
         if self.on_event:
             self.on_event(kind, **data)
 
-    async def ask(self, text, *, prefetched=()):
+    async def ask(
+        self,
+        text: str,
+        *,
+        prefetched: Sequence[
+            tuple[str, dict[str, object], dict[str, object]]
+        ] = (),
+    ) -> str:
         if self.blocked:
-            error = ChatError(
+            error: ChatError = ChatError(
                 "Session stopped after an error. Inspect any write outcome; "
                 "use /reset for a fresh context."
             )
@@ -205,13 +228,13 @@ class Harness:
         self.messages.append({"role": "user", "content": text})
         try:
             for index, (action, arguments, data) in enumerate(prefetched):
-                contents = compact(data)
+                contents: str = compact(data)
                 if len(contents.encode("utf-8")) > self.max_tool_result_bytes:
                     raise ChatError(
                         "Resolved history link exceeds the tool-result"
                         " byte budget"
                     )
-                call_id = f"host-read-{len(self.messages)}-{index}"
+                call_id: str = f"host-read-{len(self.messages)}-{index}"
                 self.messages.extend(
                     [
                         {
@@ -247,16 +270,16 @@ class Harness:
                     response=contents,
                 )
             for step in range(1, self.max_steps + 1):
-                size = self.context_bytes()
+                size: int = self.context_bytes()
                 if size > self.max_context_bytes:
                     raise ChatError(
                         "Context byte budget exceeded; use /reset, "
                         "smaller source "
                         "windows or a higher --max-context-bytes"
                     )
-                started = time.monotonic()
+                started: float = time.monotonic()
                 self.emit("request_start", step=step, context_bytes=size)
-                result = await complete_model(
+                result: dict[str, object] = await complete_model(
                     self.model, self.messages, self.tools, self.emit
                 )
                 self.emit(
@@ -266,10 +289,12 @@ class Harness:
                     else {},
                 )
                 if self.stats and not self.on_event:
-                    usage = result.get("usage") or {}
+                    usage: dict[str, object] = result.get("usage") or {}
                     if not isinstance(usage, dict):
                         usage = {}
-                    details = usage.get("prompt_tokens_details") or {}
+                    details: dict[str, object] = (
+                        usage.get("prompt_tokens_details") or {}
+                    )
                     if not isinstance(details, dict):
                         details = {}
                     print(
@@ -281,6 +306,8 @@ class Harness:
                         f"request_s={time.monotonic() - started:.2f}",
                         file=sys.stderr,
                     )
+                message: dict[str, object]
+                calls: list[tuple[dict[str, object], dict[str, object]]]
                 message, calls = self.parse_message(result)
                 self.messages.append(message)
                 if not calls:
@@ -304,9 +331,9 @@ class Harness:
                         "/reset for a new task"
                     )
                 for call, arguments in calls:
-                    name = call["function"]["name"]
-                    event_id = f"{id(self)}:{call['id']}"
-                    tool_started = time.monotonic()
+                    name: str = call["function"]["name"]
+                    event_id: str = f"{id(self)}:{call['id']}"
+                    tool_started: float = time.monotonic()
                     self.emit(
                         "tool_start",
                         name=name,
@@ -315,7 +342,9 @@ class Harness:
                     )
                     if not self.on_event:
                         print("tool:", name, file=sys.stderr)
-                    outcome = await self.client.call_tool(name, arguments)
+                    outcome: CallToolResult = await self.client.call_tool(
+                        name, arguments
+                    )
                     self.emit(
                         "tool_end",
                         name=name,
@@ -340,7 +369,7 @@ class Harness:
                             " review.",
                             file=sys.stderr,
                         )
-                    parts = [
+                    parts: list[str] = [
                         part.text
                         for part in outcome.content
                         if part.type == "text"
@@ -399,8 +428,14 @@ class Harness:
             )
             raise
 
-    def parse_message(self, result):
+    def parse_message(
+        self,
+        result: dict[str, object],
+    ) -> tuple[
+        dict[str, object], list[tuple[dict[str, object], dict[str, object]]]
+    ]:
         try:
+            choice: dict[str, object]
             (choice,) = result["choices"]
             if choice.get("finish_reason") in ("length", "content_filter"):
                 raise ChatError(
@@ -408,23 +443,31 @@ class Harness:
                     "response "
                     "were executed"
                 )
-            raw = choice["message"]
+            raw: dict[str, object] = choice["message"]
             if raw.get("role") != "assistant" or not isinstance(
                 raw.get("content"), (str, type(None))
             ):
                 raise ValueError()
-            message = {"role": "assistant", "content": raw.get("content")}
+            message: dict[str, object] = {
+                "role": "assistant",
+                "content": raw.get("content"),
+            }
 
-            reasoning = raw.get("reasoning_content", raw.get("reasoning"))
+            reasoning: object = raw.get(
+                "reasoning_content", raw.get("reasoning")
+            )
             if isinstance(reasoning, str):
                 message["reasoning_content"] = reasoning
             if isinstance(raw.get("gemini_parts"), list):
                 message["gemini_parts"] = raw["gemini_parts"]
             if isinstance(raw.get("responses_items"), list):
                 message["responses_items"] = raw["responses_items"]
-            calls = raw.get("tool_calls") or []
+            calls: list[dict[str, object]] = raw.get("tool_calls") or []
             if not isinstance(calls, list) or len(calls) > 8:
                 raise ValueError()
+            parsed: list[tuple[dict[str, object], dict[str, object]]]
+            ids: set[str]
+            clean: list[dict[str, object]]
             parsed, ids, clean = [], set(), []
             for call in calls:
                 if (
@@ -434,17 +477,19 @@ class Harness:
                     or call["id"] in ids
                 ):
                     raise ValueError()
-                name = call["function"]["name"]
+                name: str = call["function"]["name"]
                 if name not in self.allowed:
                     raise ChatError(
                         "Model requested a disabled or unknown tool; "
                         "no tools from "
                         "this response were executed"
                     )
-                arguments = json.loads(call["function"]["arguments"])
+                arguments: dict[str, object] = json.loads(
+                    call["function"]["arguments"]
+                )
                 if not isinstance(arguments, dict):
                     raise ValueError()
-                sanitized = {
+                sanitized: dict[str, object] = {
                     "id": call["id"],
                     "type": "function",
                     "function": {

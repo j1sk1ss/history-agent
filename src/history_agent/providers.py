@@ -14,19 +14,25 @@ import json
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable, Iterator
+from http.client import HTTPResponse
 
 from .client import NoRedirects
-from .model import MAX_RESPONSE_BYTES, ChatError, compact, sse_events
+from .model import MAX_RESPONSE_BYTES, ChatError, Model, compact, sse_events
 
 
-def api_messages(messages, provider):
+def api_messages(
+    messages: list[dict[str, object]], provider: str,
+) -> tuple[str, list[dict[str, object]]]:
     """
     Convert the model-neutral conversation without dropping tool
     identities.
     """
+    system: list[str]
+    out: list[dict[str, object]]
     system, out = [], []
     for message in messages:
-        role = message["role"]
+        role: str = message["role"]
         if role == "system":
             system.append(message.get("content") or "")
         elif role == "user":
@@ -34,11 +40,11 @@ def api_messages(messages, provider):
                 {"role": "user", "content": message.get("content") or ""}
             )
         elif role == "assistant":
-            blocks = []
+            blocks: list[dict[str, object]] = []
             if message.get("content"):
                 blocks.append({"type": "text", "text": message["content"]})
             for call in message.get("tool_calls", []):
-                function = call["function"]
+                function: dict[str, object] = call["function"]
                 blocks.append(
                     {
                         "type": "tool_use",
@@ -50,7 +56,7 @@ def api_messages(messages, provider):
             if blocks:
                 out.append({"role": "assistant", "content": blocks})
         elif role == "tool":
-            block = {
+            block: dict[str, object] = {
                 "type": "tool_result",
                 "tool_use_id": message["tool_call_id"],
                 "content": message.get("content") or "",
@@ -66,8 +72,10 @@ def api_messages(messages, provider):
     return "\n\n".join(system), out
 
 
-def responses_input(messages):
-    items = []
+def responses_input(
+    messages: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    items: list[dict[str, object]] = []
     for message in messages:
         if message["role"] in ("system", "user"):
             items.append(
@@ -106,11 +114,15 @@ def responses_input(messages):
     return items
 
 
-def gemini_messages(messages):
+def gemini_messages(
+    messages: list[dict[str, object]],
+) -> tuple[str, list[dict[str, object]]]:
+    system: list[str]
+    out: list[dict[str, object]]
     system, out = [], []
-    tool_names = {}
+    tool_names: dict[str, str] = {}
     for message in messages:
-        role = message["role"]
+        role: str = message["role"]
         if role == "system":
             system.append(message.get("content") or "")
         elif role == "user":
@@ -122,7 +134,7 @@ def gemini_messages(messages):
             )
         elif role == "assistant":
             if isinstance(message.get("gemini_parts"), list):
-                parts = message["gemini_parts"]
+                parts: list[dict[str, object]] = message["gemini_parts"]
             else:
                 parts = []
                 if message.get("content"):
@@ -144,17 +156,17 @@ def gemini_messages(messages):
                 out.append({"role": "model", "parts": parts})
         elif role == "tool":
             # Tool-call IDs are not a Gemini field; preserve the original name.
-            name = tool_names.get(message["tool_call_id"])
+            name: str | None = tool_names.get(message["tool_call_id"])
             if not name:
                 raise ChatError(
                     "Gemini function response has no matching tool call"
                 )
-            raw = message.get("content") or ""
+            raw: str = message.get("content") or ""
             try:
-                data = json.loads(raw)
+                data: object = json.loads(raw)
             except ValueError:
                 data = {"text": raw}
-            part = {
+            part: dict[str, object] = {
                 "functionResponse": {
                     "name": name,
                     "response": data
@@ -174,9 +186,15 @@ def gemini_messages(messages):
 
 
 def result(
-    content, calls, reason, usage=None, *, reasoning=None, gemini_parts=None
-):
-    message = {"role": "assistant", "content": content or None}
+    content: str | None, calls: list[tuple[str, str, str | dict[str, object]]],
+    reason: str, usage: dict[str, object] | None = None, *,
+    reasoning: str | None = None,
+    gemini_parts: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
+    message: dict[str, object] = {
+        "role": "assistant",
+        "content": content or None,
+    }
     if reasoning:
         message["reasoning_content"] = reasoning
     if calls:
@@ -201,33 +219,45 @@ def result(
     }
 
 
-def _request(base, path, payload, headers, timeout, *, stream):
-    url = base.rstrip("/") + path
-    request = urllib.request.Request(
+def _request(
+    base: str, path: str, payload: dict[str, object], headers: dict[str, str],
+    timeout: float, *, stream: bool,
+) -> HTTPResponse:
+    url: str = base.rstrip("/") + path
+    request: urllib.request.Request = urllib.request.Request(
         url,
         data=compact(payload).encode("utf-8"),
         headers={"Content-Type": "application/json", **headers},
     )
-    opener = urllib.request.build_opener(NoRedirects())
+    opener: urllib.request.OpenerDirector = urllib.request.build_opener(
+        NoRedirects()
+    )
     return opener.open(request, timeout=timeout)
 
 
-def _records(response, stream):
+def _records(
+    response: HTTPResponse, stream: bool,
+) -> Iterator[dict[str, object]]:
     if stream and response.headers.get_content_type() == "text/event-stream":
         for data in sse_events(response):
             if data.strip() == "[DONE]":
                 return
             yield json.loads(data)
     else:
-        raw = response.read(MAX_RESPONSE_BYTES + 1)
+        raw: bytes = response.read(MAX_RESPONSE_BYTES + 1)
         if len(raw) > MAX_RESPONSE_BYTES:
             raise ChatError("Model response exceeds 2 MiB")
         yield json.loads(raw)
 
 
-def anthropic(model, messages, tools, emit):
+def anthropic(
+    model: Model, messages: list[dict[str, object]],
+    tools: list[dict[str, object]], emit: Callable[..., None],
+) -> dict[str, object]:
+    system: str
+    converted: list[dict[str, object]]
     system, converted = api_messages(messages, "anthropic")
-    payload = {
+    payload: dict[str, object] = {
         "model": model.name,
         "max_tokens": model.max_output_tokens,
         "messages": converted,
@@ -243,7 +273,10 @@ def anthropic(model, messages, tools, emit):
     }
     if system:
         payload["system"] = system
-    headers = {"x-api-key": model.key or "", "anthropic-version": "2023-06-01"}
+    headers: dict[str, str] = {
+        "x-api-key": model.key or "",
+        "anthropic-version": "2023-06-01",
+    }
     with _request(
         model.base,
         "/messages",
@@ -252,24 +285,31 @@ def anthropic(model, messages, tools, emit):
         model.timeout,
         stream=model.stream,
     ) as response:
+        text: list[str]
+        thinking: list[str]
+        calls: list[tuple[str, str, str | dict[str, object]]]
+        blocks: dict[int, dict[str, object]]
+        usage: dict[str, object]
         text, thinking, calls, blocks, usage = [], [], [], {}, {}
+        stopped: bool
+        finish: str | None
         stopped, finish = False, None
         for item in _records(response, model.stream):
             if "error" in item or item.get("type") == "error":
                 raise ChatError("Anthropic returned an API error")
-            typ = item.get("type")
+            typ: str | None = item.get("type")
             if typ == "message_start":
                 usage.update(item.get("message", {}).get("usage") or {})
             elif typ == "content_block_start":
-                idx = item["index"]
-                b = item["content_block"]
+                idx: int = item["index"]
+                b: dict[str, object] = item["content_block"]
                 blocks[idx] = b.copy()
                 if b.get("type") == "text" and b.get("text"):
                     text.append(b["text"])
                     emit("content", text=b["text"])
             elif typ == "content_block_delta":
                 b = blocks.get(item["index"], {})
-                delta = item.get("delta", {})
+                delta: dict[str, object] = item.get("delta", {})
                 if delta.get("type") == "text_delta" and delta.get("text"):
                     text.append(delta["text"])
                     emit("content", text=delta["text"])
@@ -310,7 +350,7 @@ def anthropic(model, messages, tools, emit):
         for idx in sorted(blocks):
             b = blocks[idx]
             if b.get("type") == "tool_use":
-                arg = b.get("json_fragments")
+                arg: str | None = b.get("json_fragments")
                 calls.append(
                     (
                         b["id"],
@@ -318,7 +358,7 @@ def anthropic(model, messages, tools, emit):
                         json.loads(arg) if arg else b.get("input", {}),
                     )
                 )
-        stop = {
+        stop: str | None = {
             "end_turn": "stop",
             "stop_sequence": "stop",
             "tool_use": "tool_calls",
@@ -326,7 +366,7 @@ def anthropic(model, messages, tools, emit):
         }.get(finish)
         if stop is None:
             raise ChatError("Unexpected Anthropic finish reason")
-        stats = {
+        stats: dict[str, object] = {
             "prompt_tokens": usage.get("input_tokens"),
             "completion_tokens": usage.get("output_tokens"),
             "prompt_tokens_details": {
@@ -339,9 +379,14 @@ def anthropic(model, messages, tools, emit):
         )
 
 
-def gemini(model, messages, tools, emit):
+def gemini(
+    model: Model, messages: list[dict[str, object]],
+    tools: list[dict[str, object]], emit: Callable[..., None],
+) -> dict[str, object]:
+    system: str
+    converted: list[dict[str, object]]
     system, converted = gemini_messages(messages)
-    payload = {
+    payload: dict[str, object] = {
         "contents": converted,
         "generationConfig": {"maxOutputTokens": model.max_output_tokens},
     }
@@ -360,13 +405,13 @@ def gemini(model, messages, tools, emit):
                 ]
             }
         ]
-    model_id = urllib.parse.quote(model.name, safe="-_.")
-    endpoint = (
+    model_id: str = urllib.parse.quote(model.name, safe="-_.")
+    endpoint: str = (
         f"/models/{model_id}:streamGenerateContent?alt=sse"
         if model.stream
         else f"/models/{model_id}:generateContent"
     )
-    headers = {"x-goog-api-key": model.key or ""}
+    headers: dict[str, str] = {"x-goog-api-key": model.key or ""}
     with _request(
         model.base,
         endpoint,
@@ -375,7 +420,13 @@ def gemini(model, messages, tools, emit):
         model.timeout,
         stream=model.stream,
     ) as response:
+        text: list[str]
+        thought: list[str]
+        calls: list[tuple[str, str, str | dict[str, object]]]
+        preserved: list[dict[str, object]]
         text, thought, calls, preserved = [], [], [], []
+        usage: dict[str, object]
+        finish: str | None
         usage, finish = {}, None
         for item in _records(response, model.stream):
             if item.get("error"):
@@ -393,8 +444,8 @@ def gemini(model, messages, tools, emit):
                             text.append(part["text"])
                             emit("content", text=part["text"])
                     if isinstance(part.get("functionCall"), dict):
-                        call = part["functionCall"]
-                        args = call.get("args") or {}
+                        call: dict[str, object] = part["functionCall"]
+                        args: dict[str, object] = call.get("args") or {}
                         calls.append(
                             (
                                 f"gemini-{len(calls)}-{call['name']}",
@@ -403,7 +454,7 @@ def gemini(model, messages, tools, emit):
                             )
                         )
                         emit("tool_delta", text=compact(args))
-        stop = {
+        stop: str | None = {
             "STOP": "tool_calls" if calls else "stop",
             "MAX_TOKENS": "length",
             "SAFETY": "content_filter",
@@ -413,7 +464,7 @@ def gemini(model, messages, tools, emit):
                 "Gemini response is incomplete or blocked; no tool calls "
                 "executed"
             )
-        stats = {
+        stats: dict[str, object] = {
             "prompt_tokens": usage.get("promptTokenCount"),
             "completion_tokens": usage.get("candidatesTokenCount"),
             "prompt_tokens_details": {
@@ -431,8 +482,11 @@ def gemini(model, messages, tools, emit):
         )
 
 
-def responses(model, messages, tools, emit):
-    payload = {
+def responses(
+    model: Model, messages: list[dict[str, object]],
+    tools: list[dict[str, object]], emit: Callable[..., None],
+) -> dict[str, object]:
+    payload: dict[str, object] = {
         "model": model.name,
         "input": responses_input(messages),
         "stream": model.stream,
@@ -452,7 +506,7 @@ def responses(model, messages, tools, emit):
         # thought.
         payload["reasoning"] = {"summary": "auto"}
         payload["include"] = ["reasoning.encrypted_content"]
-    headers = {"Authorization": "Bearer " + (model.key or "")}
+    headers: dict[str, str] = {"Authorization": "Bearer " + (model.key or "")}
     with _request(
         model.base,
         "/responses",
@@ -461,12 +515,18 @@ def responses(model, messages, tools, emit):
         model.timeout,
         stream=model.stream,
     ) as response:
+        text: list[str]
+        thought: list[str]
+        calls: list[tuple[str, str, str | dict[str, object]]]
+        current: dict[str, dict[str, object]]
         text, thought, calls, current = [], [], [], {}
-        output_items = {}
-        completed_output = None
+        output_items: dict[int, dict[str, object]] = {}
+        completed_output: list[dict[str, object]] | None = None
+        done: bool
+        usage: dict[str, object]
         done, usage = False, {}
         for item in _records(response, model.stream):
-            typ = item.get("type")
+            typ: str | None = item.get("type")
             if typ in (
                 "response.failed",
                 "response.incomplete",
@@ -476,7 +536,7 @@ def responses(model, messages, tools, emit):
                     "Responses API returned a failed/incomplete response"
                 )
             if typ == "response.output_text.delta":
-                t = item.get("delta", "")
+                t: str = item.get("delta", "")
                 text.append(t)
                 emit("content", text=t)
             elif typ == "response.reasoning_summary_text.delta":
@@ -484,11 +544,13 @@ def responses(model, messages, tools, emit):
                 thought.append(t)
                 emit("reasoning", text=t)
             elif typ == "response.function_call_arguments.delta":
-                entry = current.setdefault(item["item_id"], {"arguments": ""})
+                entry: dict[str, object] = current.setdefault(
+                    item["item_id"], {"arguments": ""}
+                )
                 entry["arguments"] += item.get("delta", "")
                 emit("tool_delta", text=item.get("delta", ""))
             elif typ == "response.output_item.added":
-                b = item.get("item", {})
+                b: dict[str, object] = item.get("item", {})
                 if b.get("type") == "function_call":
                     current[b["id"]] = {
                         **b,
@@ -525,7 +587,7 @@ def responses(model, messages, tools, emit):
             raise ChatError(
                 "Responses stream ended without completion; no tools executed"
             )
-        retained = (
+        retained: list[dict[str, object]] = (
             completed_output
             if isinstance(completed_output, list)
             else [output_items[index] for index in sorted(output_items)]
@@ -535,7 +597,7 @@ def responses(model, messages, tools, emit):
                 if item.get("type") == "message":
                     for block in item.get("content", []):
                         if block.get("type") == "output_text":
-                            chunk = block.get("text", "")
+                            chunk: str = block.get("text", "")
                             text.append(chunk)
                             emit("content", text=chunk)
         if not thought:
@@ -554,7 +616,7 @@ def responses(model, messages, tools, emit):
                 calls.append(
                     (b["call_id"], b["name"], b.get("arguments", "{}"))
                 )
-        stats = {
+        stats: dict[str, object] = {
             "prompt_tokens": usage.get("input_tokens"),
             "completion_tokens": usage.get("output_tokens"),
             "prompt_tokens_details": {
@@ -564,7 +626,7 @@ def responses(model, messages, tools, emit):
             },
         }
         emit("usage", usage=stats)
-        normalized = result(
+        normalized: dict[str, object] = result(
             "".join(text),
             calls,
             "tool_calls" if calls else "stop",
@@ -576,7 +638,10 @@ def responses(model, messages, tools, emit):
         return normalized
 
 
-def complete_native(model, messages, tools, emit):
+def complete_native(
+    model: Model, messages: list[dict[str, object]],
+    tools: list[dict[str, object]], emit: Callable[..., None],
+) -> dict[str, object]:
     try:
         if model.provider in ("anthropic", "claude"):
             return anthropic(model, messages, tools, emit)

@@ -1,6 +1,6 @@
 """Hover descriptions for the connection and review settings."""
 
-SETTINGS_HELP = {
+SETTINGS_HELP: dict[str, str] = {
     "provider": (
         "The model API protocol. For Qwen served by vLLM or LM Studio, "
         "choose openai-compatible; for llama-server, choose llama; "

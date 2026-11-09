@@ -25,13 +25,22 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-CLIENTS = ("copilot", "opencode", "openclaw", "hermes", "claude-code", "codex")
-SERVER_NAME = "history-mcp"
-PROVIDER_NAME = "history-agent"
+CLIENTS: tuple[str, ...] = (
+    "copilot",
+    "opencode",
+    "openclaw",
+    "hermes",
+    "claude-code",
+    "codex",
+)
+SERVER_NAME: str = "history-mcp"
+PROVIDER_NAME: str = "history-agent"
 
 
-def parse_args(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(
+        description=__doc__
+    )
     parser.add_argument(
         "--client",
         "--type",
@@ -96,7 +105,7 @@ def parse_args(argv=None):
         help="Show files and non-secret endpoints; do not install packages"
         " or write files",
     )
-    args = parser.parse_args(argv)
+    args: argparse.Namespace = parser.parse_args(argv)
     args.config_root = args.config_root.expanduser().resolve()
     args.install_dir = (
         (args.install_dir or args.config_root / ".local/share/history-agent")
@@ -106,8 +115,8 @@ def parse_args(argv=None):
     return args
 
 
-def valid_url(value):
-    url = urllib.parse.urlsplit(value)
+def valid_url(value: str) -> str:
+    url: urllib.parse.SplitResult = urllib.parse.urlsplit(value)
     if (
         url.scheme not in ("http", "https")
         or not url.hostname
@@ -123,12 +132,12 @@ def valid_url(value):
     return value.rstrip("/")
 
 
-def prepare(args):
+def prepare(args: argparse.Namespace) -> None:
     if getattr(args, "prepared", False):
         return
     args.history_url = valid_url(args.history_url)
-    url = valid_url(args.model_url)
-    expected = {"codex": "responses", "claude-code": "messages"}.get(
+    url: str = valid_url(args.model_url)
+    expected: str = {"codex": "responses", "claude-code": "messages"}.get(
         args.client, "chat-completions"
     )
     args.api = expected if args.model_api == "auto" else args.model_api
@@ -144,12 +153,12 @@ def prepare(args):
         raise ValueError(
             f"This {args.client} setup supports chat-completions endpoints"
         )
-    paths = {
+    paths: dict[str, str] = {
         "chat-completions": "/chat/completions",
         "responses": "/responses",
         "messages": "/messages",
     }
-    explicit = next(
+    explicit: str | None = next(
         (kind for kind, suffix in paths.items() if url.endswith(suffix)), None
     )
     if explicit and explicit != args.api:
@@ -157,7 +166,7 @@ def prepare(args):
             f"The supplied URL uses {explicit}, but {args.client} is "
             f"configured for {args.api}; supply a compatible endpoint"
         )
-    base = url[: -len(paths[explicit])] if explicit else url
+    base: str = url[: -len(paths[explicit])] if explicit else url
     if not re.search(r"/v\d+$", base):
         base += "/v1"
     args.model_base = base
@@ -180,6 +189,8 @@ def prepare(args):
         raise ValueError(
             "Model ID must be non-empty and contain no control characters"
         )
+    user: str | None
+    password: str | None
     user, password = (
         os.environ.get("HISTORY_USER"),
         os.environ.get("HISTORY_PASSWORD"),
@@ -193,28 +204,34 @@ def prepare(args):
 
 
 class NoRedirects(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args, **kwargs):
+    def redirect_request(self, *args: object, **kwargs: object) -> None:
         return None
 
 
-def discover_model(base, key_env, api="chat-completions"):
-    headers = {"Accept": "application/json"}
-    key = os.environ.get(key_env)
+def discover_model(
+    base: str, key_env: str, api: str = "chat-completions",
+) -> str:
+    headers: dict[str, str] = {"Accept": "application/json"}
+    key: str | None = os.environ.get(key_env)
     if api == "messages":
         headers["anthropic-version"] = "2023-06-01"
         if key:
             headers["x-api-key"] = key
     elif key:
         headers["Authorization"] = "Bearer " + key
-    request = urllib.request.Request(base + "/models", headers=headers)
+    request: urllib.request.Request = urllib.request.Request(
+        base + "/models", headers=headers
+    )
     try:
-        opener = urllib.request.build_opener(NoRedirects())
+        opener: urllib.request.OpenerDirector = urllib.request.build_opener(
+            NoRedirects()
+        )
         with opener.open(request, timeout=15) as response:
-            raw = response.read(1024 * 1024 + 1)
+            raw: bytes = response.read(1024 * 1024 + 1)
         if len(raw) > 1024 * 1024:
             raise ValueError()
-        data = json.loads(raw)
-        models = sorted(
+        data: dict[str, object] = json.loads(raw)
+        models: list[str] = sorted(
             {
                 m["id"]
                 for m in data["data"]
@@ -234,7 +251,9 @@ def discover_model(base, key_env, api="chat-completions"):
     return models[0]
 
 
-def merge(original, patch):
+def merge(
+    original: MutableMapping[str, object], patch: dict[str, object],
+) -> MutableMapping[str, object]:
     for name, value in patch.items():
         if (
             name in ("env", "environment")
@@ -243,7 +262,7 @@ def merge(original, patch):
         ):
             # Migrate old inline history settings: leaving them here would
             # override the new config file.
-            old_env = dict(original.get(name, {}))
+            old_env: dict[str, str] = dict(original.get(name, {}))
             for key in (
                 "HISTORY_URL",
                 "HISTORY_USER",
@@ -272,16 +291,16 @@ def merge(original, patch):
 class Edit:
     path: Path
     format: str
-    patch: object
+    patch: dict[str, object]
 
 
-def config_path(root, name):
+def config_path(root: Path, name: str) -> Path:
     # An explicitly supplied root is self-contained; do not accidentally touch
     # the real user profile.
     return root / name
 
 
-def vscode_directory(args):
+def vscode_directory(args: argparse.Namespace) -> Path:
     if args.vscode_user_dir:
         return args.vscode_user_dir.expanduser().resolve()
     if sys.platform == "darwin":
@@ -291,19 +310,19 @@ def vscode_directory(args):
     return args.config_root / ".config/Code/User"
 
 
-def build_plan(args):
+def build_plan(args: argparse.Namespace) -> list[Edit]:
     prepare(args)
-    root = args.config_root
-    executable = Path(sys.executable)
-    server_script = Path(__file__).resolve().parents[2] / "mcp_server.py"
-    history_config = args.install_dir / "history.json"
-    stdio = {
+    root: Path = args.config_root
+    executable: Path = Path(sys.executable)
+    server_script: Path = Path(__file__).resolve().parents[2] / "mcp_server.py"
+    history_config: Path = args.install_dir / "history.json"
+    stdio: dict[str, object] = {
         "command": str(executable),
         "args": [str(server_script), "--transport", "stdio"],
         "env": {"HISTORY_CONFIG": str(history_config)},
     }
-    key = os.environ.get(args.model_key_env)
-    history = {"HISTORY_URL": args.history_url}
+    key: str | None = os.environ.get(args.model_key_env)
+    history: dict[str, str] = {"HISTORY_URL": args.history_url}
     for name in ("HISTORY_USER", "HISTORY_PASSWORD", "HISTORY_SESSION"):
         if name in os.environ:
             history[name] = os.environ[name]
@@ -314,8 +333,8 @@ def build_plan(args):
         for n in ("HISTORY_USER", "HISTORY_PASSWORD", "HISTORY_SESSION")
     ):
         history.update(HISTORY_USER="", HISTORY_PASSWORD="")
-    plan = [Edit(history_config, "json", history)]
-    model = {
+    plan: list[Edit] = [Edit(history_config, "json", history)]
+    model: dict[str, object] = {
         "id": args.model,
         "name": args.model,
         "url": args.model_endpoint,
@@ -349,19 +368,21 @@ def build_plan(args):
             ),
         ]
     elif args.client == "opencode":
-        path = config_path(root, ".config/opencode/opencode.json")
+        path: Path = config_path(root, ".config/opencode/opencode.json")
         if path.with_suffix(".jsonc").exists():
             path = path.with_suffix(".jsonc")
-        legacy = args.opencode_format == "legacy"
+        legacy: bool = args.opencode_format == "legacy"
         if args.opencode_format == "auto" and path.exists():
-            data = read_data(path, "json")
+            data: MutableMapping[str, object] | list[dict[str, object]] = (
+                read_data(path, "json")
+            )
             legacy = "provider" in data or (
                 "mcp" in data and "servers" not in data["mcp"]
             )
-        options = {"baseURL": args.model_base}
+        options: dict[str, str] = {"baseURL": args.model_base}
         if key:
             options["apiKey"] = "{env:" + args.model_key_env + "}"
-        provider = {
+        provider: dict[str, object] = {
             "name": "History agent model",
             "models": {args.model: {"name": args.model}},
         }
@@ -372,14 +393,14 @@ def build_plan(args):
                 package="@opencode/ai/providers/openai-compatible",
                 settings=options,
             )
-        mcp = {
+        mcp: dict[str, object] = {
             "type": "local",
             "command": [str(executable), *stdio["args"]],
             "environment": stdio["env"],
         }
         if not legacy:
             provider["env"] = [args.model_key_env] if key else []
-        patch = {
+        patch: dict[str, object] = {
             "$schema": "https://opencode.ai/config.json",
             "model": PROVIDER_NAME + "/" + args.model,
             "provider" if legacy else "providers": {PROVIDER_NAME: provider},
@@ -453,7 +474,7 @@ def build_plan(args):
             )
         )
     elif args.client == "claude-code":
-        env = {
+        env: dict[str, str] = {
             "ANTHROPIC_BASE_URL": args.model_base.removesuffix("/v1"),
             "ANTHROPIC_MODEL": args.model,
             "ANTHROPIC_AUTH_TOKEN": key or "no-key-required",
@@ -494,10 +515,12 @@ def build_plan(args):
     return plan
 
 
-def read_data(path, format):
+def read_data(
+    path: Path, format: str,
+) -> MutableMapping[str, object] | list[dict[str, object]]:
     if not path.exists():
         return [] if format == "providers" else {}
-    text = path.read_text(encoding="utf-8")
+    text: str = path.read_text(encoding="utf-8")
     try:
         if format in ("json", "providers"):
             try:
@@ -522,12 +545,12 @@ def read_data(path, format):
     raise ValueError("Unsupported configuration format")
 
 
-def render(edit):
+def render(edit: Edit) -> str:
     if edit.format == "dotenv":
-        text = edit.path.read_text() if edit.path.exists() else ""
+        text: str = edit.path.read_text() if edit.path.exists() else ""
         for name, value in edit.patch.items():
-            line = name + "=" + json.dumps(value, ensure_ascii=False)
-            pattern = re.compile(
+            line: str = name + "=" + json.dumps(value, ensure_ascii=False)
+            pattern: re.Pattern[str] = re.compile(
                 r"^(?:export\s+)?" + re.escape(name) + r"=.*$", re.MULTILINE
             )
             text = (
@@ -536,7 +559,9 @@ def render(edit):
                 else text.rstrip("\n") + "\n" + line + "\n"
             )
         return text
-    data = read_data(edit.path, edit.format)
+    data: MutableMapping[str, object] | list[dict[str, object]] = read_data(
+        edit.path, edit.format
+    )
     if edit.format == "providers":
         if not isinstance(data, list):
             raise ValueError(f"Expected a provider array: {edit.path}")
@@ -560,26 +585,28 @@ def render(edit):
     if edit.format == "yaml":
         from ruamel.yaml import YAML
 
-        stream = io.StringIO()
+        stream: io.StringIO = io.StringIO()
         YAML().dump(data, stream)
         return stream.getvalue()
     return json.dumps(data, ensure_ascii=False, indent=2) + "\n"
 
 
-def write_plan(plan):
+def write_plan(plan: list[Edit]) -> tuple[list[Path], list[Path]]:
     # Render every file first: a malformed existing config must not leave a
     # partial setup.
-    rendered = [(edit.path, render(edit)) for edit in plan]
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
-    changed = []
-    backups = []
+    rendered: list[tuple[Path, str]] = [
+        (edit.path, render(edit)) for edit in plan
+    ]
+    stamp: str = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    changed: list[tuple[Path, bytes | None]] = []
+    backups: list[Path] = []
     try:
         for path, text in rendered:
-            old = path.read_bytes() if path.exists() else None
+            old: bytes | None = path.read_bytes() if path.exists() else None
             if old == text.encode("utf-8"):
                 continue
             path.parent.mkdir(parents=True, exist_ok=True)
-            backup = None
+            backup: Path | None = None
             if old is not None:
                 backup = path.with_name(
                     path.name + ".history-agent-" + stamp + ".bak"
@@ -598,9 +625,11 @@ def write_plan(plan):
     return [path for path, _ in changed], backups
 
 
-def private_write(path, content):
+def private_write(path: Path, content: bytes) -> None:
     # Replace atomically; neither an incomplete config nor credentials are
     # exposed through broad permissions.
+    fd: int
+    temporary: str
     fd, temporary = tempfile.mkstemp(prefix=".history-agent-", dir=path.parent)
     try:
         with os.fdopen(fd, "wb") as out:
@@ -613,10 +642,12 @@ def private_write(path, content):
             os.unlink(temporary)
 
 
-def main(argv=None, *, args=None):
+def main(
+    argv: list[str] | None = None, *, args: argparse.Namespace | None = None,
+) -> None:
     args = args or parse_args(argv)
     try:
-        plan = build_plan(args)
+        plan: list[Edit] = build_plan(args)
         print(f"Client: {args.client}; model: {args.model}; API: {args.api}")
         print(f"Model endpoint: {args.model_endpoint}")
         print(f"History endpoint: {args.history_url}")
@@ -641,6 +672,8 @@ def main(argv=None, *, args=None):
                 "Keep configure.py, mcp_server.py and src in the same project"
                 " checkout"
             )
+        changed: list[Path]
+        backups: list[Path]
         changed, backups = write_plan(plan)
         for path in changed:
             print("Configured:", path)

@@ -1,14 +1,22 @@
 """Read saved job progress without modifying or migrating checkpoints."""
 
+from __future__ import annotations
+
 import json
 import os
 import re
 import sqlite3
+from collections.abc import Iterator
 from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-FINISHED_ITEM_STATES = ("saved", "reviewed", "skipped", "conflict")
+FINISHED_ITEM_STATES: tuple[str, ...] = (
+    "saved",
+    "reviewed",
+    "skipped",
+    "conflict",
+)
 
 
 class JobRunningError(ValueError):
@@ -16,9 +24,9 @@ class JobRunningError(ValueError):
 
 
 @contextmanager
-def job_lock(path: Path):
+def job_lock(path: Path) -> Iterator[None]:
     """Use the same process lock for running and deleting a checkpoint."""
-    fd = os.open(path.with_suffix(".lock"), os.O_CREAT | os.O_RDWR, 0o600)
+    fd: int = os.open(path.with_suffix(".lock"), os.O_CREAT | os.O_RDWR, 0o600)
     with os.fdopen(fd, "r+b") as lock:
         try:
             if os.name == "nt":
@@ -48,7 +56,7 @@ def delete_job(root: Path, job_id: str) -> None:
     """Delete only local job files, refusing checkpoints in active use."""
     if not re.fullmatch(r"[a-f0-9]{32}", job_id):
         raise ValueError("Invalid batch job ID")
-    path = Path(root) / (job_id + ".sqlite3")
+    path: Path = Path(root) / (job_id + ".sqlite3")
     if path.is_symlink() or not path.is_file():
         raise ValueError("Batch job does not exist: " + job_id)
     with job_lock(path):
@@ -61,7 +69,7 @@ def delete_job(root: Path, job_id: str) -> None:
 @dataclass(frozen=True)
 class UnfinishedJob:
     job_id: str
-    scope: dict
+    scope: dict[str, str | int]
     model: str
     write: bool
     done: int
@@ -72,21 +80,21 @@ class UnfinishedJob:
 
 def unfinished_jobs(root: Path) -> list[UnfinishedJob]:
     """Find resumable checkpoints, most recently updated first."""
-    result = []
+    result: list[UnfinishedJob] = []
     for path in Path(root).glob("*.sqlite3"):
         if not re.fullmatch(r"[a-f0-9]{32}", path.stem):
             continue
         try:
-            uri = path.resolve().as_uri() + "?mode=ro"
+            uri: str = path.resolve().as_uri() + "?mode=ro"
             with closing(sqlite3.connect(uri, uri=True, timeout=0.1)) as db:
-                metadata = {
+                metadata: dict[str, object] = {
                     key: json.loads(value)
                     for key, value in db.execute(
                         "SELECT key,value FROM metadata WHERE key IN "
                         "('format','scope','model','write','queue_complete')"
                     )
                 }
-                scope = metadata["scope"]
+                scope: dict[str, str | int] = metadata["scope"]
                 if metadata.get("format") != 1 or not isinstance(scope, dict):
                     continue
                 if not all(
@@ -94,17 +102,19 @@ def unfinished_jobs(root: Path) -> list[UnfinishedJob]:
                     for key in ("project_id", "stream_id", "snapshot_id")
                 ):
                     continue
-                states = dict(
+                states: dict[str, int] = dict(
                     db.execute(
                         "SELECT state,COUNT(*) FROM items GROUP BY state"
                     )
                 )
-            total = sum(states.values())
-            done = sum(states.get(state, 0) for state in FINISHED_ITEM_STATES)
-            queue_complete = metadata.get("queue_complete") is True
+            total: int = sum(states.values())
+            done: int = sum(
+                states.get(state, 0) for state in FINISHED_ITEM_STATES
+            )
+            queue_complete: bool = metadata.get("queue_complete") is True
             if queue_complete and done == total:
                 continue
-            model = metadata.get("model", {})
+            model: dict[str, str] = metadata.get("model", {})
             if not isinstance(model, dict):
                 continue
             result.append(

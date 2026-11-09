@@ -1,31 +1,33 @@
+from __future__ import annotations
+
 import math
 import time
 
 
 class SessionMetrics:
-    def __init__(self):
-        self.session_in = 0
-        self.session_out = 0
-        self.session_cached = 0
-        self.session_estimated_in = False
-        self.session_estimated_out = False
-        self.batch = None
+    def __init__(self) -> None:
+        self.session_in: int = 0
+        self.session_out: int = 0
+        self.session_cached: int = 0
+        self.session_estimated_in: bool = False
+        self.session_estimated_out: bool = False
+        self.batch: dict[str, object] | None = None
         self.start()
 
-    def start(self):
-        self.started = time.monotonic()
-        self.request_started = self.started
-        self.request_finished = None
-        self.first_token = None
-        self.context = 0
-        self.output_chars = 0
-        self.usage_chars = 0
-        self.usage = {}
-        self.accounted = True
-        self.error = None
+    def start(self) -> None:
+        self.started: float = time.monotonic()
+        self.request_started: float = self.started
+        self.request_finished: float | None = None
+        self.first_token: float | None = None
+        self.context: int = 0
+        self.output_chars: int = 0
+        self.usage_chars: int = 0
+        self.usage: dict[str, object] = {}
+        self.accounted: bool = True
+        self.error: str | None = None
 
-    def event(self, kind, **data):
-        now = time.monotonic()
+    def event(self, kind: str, **data: object) -> None:
+        now: float = time.monotonic()
         if kind == "batch_started":
             self.batch = {
                 "job_id": data["job_id"],
@@ -49,7 +51,7 @@ class SessionMetrics:
             self.usage = {}
             self.accounted = False
         elif kind in ("content", "reasoning", "tool_delta"):
-            chunk = data.get("text", "")
+            chunk: str = data.get("text", "")
             if chunk:
                 self.first_token = self.first_token or now
                 self.output_chars += len(chunk)
@@ -66,8 +68,8 @@ class SessionMetrics:
             self.request_finished = now
             self.account_usage()
 
-    def counts(self):
-        def valid(value):
+    def counts(self) -> tuple[int | None, int | None, int | None]:
+        def valid(value: object) -> int | None:
             return (
                 value
                 if isinstance(value, int)
@@ -76,21 +78,26 @@ class SessionMetrics:
                 else None
             )
 
-        prompt = valid(self.usage.get("prompt_tokens"))
-        output = valid(self.usage.get("completion_tokens"))
+        prompt: int | None = valid(self.usage.get("prompt_tokens"))
+        output: int | None = valid(self.usage.get("completion_tokens"))
         if self.output_chars > self.usage_chars:
             output = None
-        details = self.usage.get("prompt_tokens_details") or {}
-        cached = (
+        details: dict[str, object] = (
+            self.usage.get("prompt_tokens_details") or {}
+        )
+        cached: int | None = (
             valid(details.get("cached_tokens"))
             if isinstance(details, dict)
             else None
         )
         return prompt, output, cached
 
-    def account_usage(self):
+    def account_usage(self) -> None:
         if self.accounted:
             return
+        prompt: int | None
+        output: int | None
+        cached: int | None
         prompt, output, cached = self.counts()
         self.session_in += (
             prompt if prompt is not None else math.ceil(self.context / 4)
@@ -103,27 +110,39 @@ class SessionMetrics:
         self.session_estimated_out |= output is None
         self.accounted = True
 
-    def summary(self, state, *, context_limit=None, detailed=False):
+    def summary(
+        self, state: str, *, context_limit: int | None = None,
+        detailed: bool = False,
+    ) -> str:
+        prompt: int | None
+        output: int | None
+        cached: int | None
         prompt, output, cached = self.counts()
-        received = (
+        received: int = (
             prompt if prompt is not None else math.ceil(self.context / 4)
         )
-        emitted = (
+        emitted: int = (
             output if output is not None else math.ceil(self.output_chars / 4)
         )
-        generation = (
+        generation: float = (
             (self.request_finished or time.monotonic()) - self.first_token
             if self.first_token
             else 0
         )
-        speed = (emitted / generation) if generation > 0.05 else 0
-        input_count = str(received) if prompt is not None else f"~{received}"
-        output_count = str(emitted) if output is not None else f"~{emitted}"
-        speed_label = f"{speed:.1f}" if output is not None else f"~{speed:.1f}"
-        context = f"{self.context / 1024:.1f}"
+        speed: float = (emitted / generation) if generation > 0.05 else 0
+        input_count: str = (
+            str(received) if prompt is not None else f"~{received}"
+        )
+        output_count: str = (
+            str(emitted) if output is not None else f"~{emitted}"
+        )
+        speed_label: str = (
+            f"{speed:.1f}" if output is not None else f"~{speed:.1f}"
+        )
+        context: str = f"{self.context / 1024:.1f}"
         if context_limit is not None:
             context += f"/{context_limit / 1024:.1f}"
-        label = f"{state} | CTX {context} KiB | {speed_label} tok/s"
+        label: str = f"{state} | CTX {context} KiB | {speed_label} tok/s"
         if self.batch:
             label += (
                 f" | {self.batch.get('done', 0)}/{self.batch.get('total', 0)}"
@@ -133,10 +152,10 @@ class SessionMetrics:
             f"  CACHE {cached if cached is not None else '-'}"
         )
         if detailed:
-            session_in = (
+            session_in: str = (
                 f"{'~' if self.session_estimated_in else ''}{self.session_in}"
             )
-            session_out = (
+            session_out: str = (
                 f"{'~' if self.session_estimated_out else ''}"
                 f"{self.session_out}"
             )

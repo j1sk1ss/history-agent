@@ -3,13 +3,17 @@ Small checker-local hypotheses, never previous warnings' evidence or
 verdicts.
 """
 
+from __future__ import annotations
+
 import json
 import re
+from sqlite3 import Connection, Cursor
 
+from . import batch
 from .classification import PATTERN_CLASSES
 from .model import compact
 
-PATTERN_SCHEMA = {
+PATTERN_SCHEMA: dict[str, object] = {
     "type": "object",
     "additionalProperties": False,
     "required": ["name", "criterion", "checks"],
@@ -26,7 +30,7 @@ PATTERN_SCHEMA = {
 }
 
 
-def initialize(db):
+def initialize(db: Connection) -> None:
     db.execute("""CREATE TABLE IF NOT EXISTS checker_patterns(
         checker TEXT NOT NULL, name TEXT NOT NULL,
         classification TEXT NOT NULL,
@@ -34,15 +38,20 @@ def initialize(db):
         PRIMARY KEY(checker,name,classification))""")
 
 
-def recall(job, checker):
-    result = []
-    rows = job.db.execute(
+def recall(
+    job: batch.Journal, checker: str,
+) -> list[dict[str, str | list[str]]]:
+    result: list[dict[str, str | list[str]]] = []
+    rows: Cursor = job.db.execute(
         "SELECT classification,value FROM checker_patterns WHERE checker=? "
         "ORDER BY uses DESC,rowid DESC LIMIT 6",
         (checker,),
     )
     for classification, value in rows:
-        hint = {"classification": classification, **json.loads(value)}
+        hint: dict[str, str | list[str]] = {
+            "classification": classification,
+            **json.loads(value),
+        }
         if len(compact(result + [hint])) > 2400:
             break
         result.append(hint)
@@ -51,11 +60,13 @@ def recall(job, checker):
     return result
 
 
-def learn(job, checker, verdict):
-    pattern = verdict.get("pattern")
+def learn(
+    job: batch.Journal, checker: str, verdict: dict[str, object],
+) -> None:
+    pattern: dict[str, str | list[str]] | None = verdict.get("pattern")
     if not pattern or verdict["classification"] not in PATTERN_CLASSES:
         return
-    text = compact(pattern)
+    text: str = compact(pattern)
     if re.search(r"(?:/[A-Za-z0-9_.-]+){3,}|\b[a-fA-F0-9]{40}\b", text):
         return
     with job.db:

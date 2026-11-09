@@ -1,5 +1,7 @@
 """A compact, scrollable launcher for unfinished review jobs."""
 
+from __future__ import annotations
+
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -10,7 +12,7 @@ from ..terminal import safe_text
 
 
 class UnfinishedJobs(Vertical):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(id="unfinished-jobs", disabled=True)
 
     def compose(self) -> ComposeResult:
@@ -19,23 +21,23 @@ class UnfinishedJobs(Vertical):
         yield Static("", id="jobs-error", markup=False)
 
     async def show_jobs(self, jobs: list[UnfinishedJob]) -> None:
-        listing = self.query_one("#jobs-list", VerticalScroll)
+        listing: VerticalScroll = self.query_one("#jobs-list", VerticalScroll)
         await listing.remove_children()
         self.query_one("#jobs-error", Static).update("")
         self.query_one("#jobs-error").display = False
-        rows = []
+        rows: list[Horizontal] = []
         for job in jobs:
-            scope = job.scope
-            progress = f"{job.done}/{job.total}"
+            scope: dict[str, str | int] = job.scope
+            progress: str = f"{job.done}/{job.total}"
             if not job.queue_complete:
                 progress += "+ · collecting warnings"
-            mode = "write" if job.write else "read only"
-            title = (
+            mode: str = "write" if job.write else "read only"
+            title: str = (
                 f"{job.job_id[:8]} · {progress} · "
                 f"project {scope['project_id']} · {scope['stream_id']}"
             )
-            details = f"{job.model} · {mode} · {scope['snapshot_id']}"
-            description = Static(
+            details: str = f"{job.model} · {mode} · {scope['snapshot_id']}"
+            description: Static = Static(
                 Text(
                     safe_text(title + "\n" + details),
                     no_wrap=True,

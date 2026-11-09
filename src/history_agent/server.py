@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from importlib.resources import files
-from typing import Any
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -14,7 +14,7 @@ from .client import HistoryClient, HistoryError, Settings
 from .skills_catalog import catalog as skill_catalog
 from .skills_catalog import read_skill
 
-INSTRUCTIONS = (
+INSTRUCTIONS: str = (
     "Investigate and classify Svace warnings through history. If "
     "no URL or explicit scope is given, "
     "call history_current to select the first alphabetical "
@@ -64,11 +64,14 @@ def api_reference() -> str:
 
 
 def create_server(client: HistoryClient) -> MCPServer:
-    server = MCPServer(
+    server: MCPServer = MCPServer(
         "history-agent", version="0.1.0", instructions=INSTRUCTIONS
     )
 
-    def execute(operation, *args, **kwargs):
+    def execute(
+        operation: Callable[..., dict[str, object]], *args: object,
+        **kwargs: object,
+    ) -> dict[str, object]:
         try:
             return operation(*args, **kwargs)
         except HistoryError as error:
@@ -77,7 +80,7 @@ def create_server(client: HistoryClient) -> MCPServer:
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False)
     )
-    def history_discover(action: str | None = None) -> dict[str, Any]:
+    def history_discover(action: str | None = None) -> dict[str, object]:
         """
         List history actions, get one action's schema, or get the
         'workflow'/'api' instructions.
@@ -98,7 +101,9 @@ def create_server(client: HistoryClient) -> MCPServer:
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False)
     )
-    def history_read(action: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    def history_read(
+        action: str, arguments: dict[str, object],
+    ) -> dict[str, object]:
         """
         Read warnings, traces, source or DXR. Get the action's schema with
         history_discover first.
@@ -109,15 +114,14 @@ def create_server(client: HistoryClient) -> MCPServer:
         annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False)
     )
     def history_current(
-        project_id: int | None = None,
-        project_name: str | None = None,
+        project_id: int | None = None, project_name: str | None = None,
         stream_id: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """
         Select a default project/branch/snapshot; alphabetic projects,
         first snapshot, no searching by the model.
         """
-        args = {
+        args: dict[str, str | int] = {
             key: value
             for key, value in {
                 "project_id": project_id,
@@ -137,8 +141,8 @@ def create_server(client: HistoryClient) -> MCPServer:
         )
     )
     def history_write(
-        action: str, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+        action: str, arguments: dict[str, object],
+    ) -> dict[str, object]:
         """
         Save an authorized warning review using agent_set_review; requires
         classification and explanation.
@@ -155,7 +159,7 @@ def create_server(client: HistoryClient) -> MCPServer:
 
     @server.prompt()
     def review_warning(
-        project_id: str, warning_id: str, branch: str = "master"
+        project_id: str, warning_id: str, branch: str = "master",
     ) -> str:
         """
         Investigate a warning with the shared history tools. Save a review
@@ -170,7 +174,9 @@ def create_server(client: HistoryClient) -> MCPServer:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(
+        description=__doc__
+    )
     parser.add_argument(
         "--transport", choices=("stdio", "streamable-http"), default="stdio"
     )
@@ -180,8 +186,8 @@ def main() -> None:
         default=8765,
         help="Local HTTP MCP port (default: 8765)",
     )
-    options = parser.parse_args()
-    server = create_server(HistoryClient(Settings.from_env()))
+    options: argparse.Namespace = parser.parse_args()
+    server: MCPServer = create_server(HistoryClient(Settings.from_env()))
     if options.transport == "stdio":
         server.run()
     else:

@@ -4,15 +4,23 @@ import asyncio
 import json
 import shlex
 import sys
+from argparse import Namespace
+from collections.abc import Callable, Coroutine
 from functools import partial
 
+from mcp import Client
+from mcp.types import Tool
+
 from .agent import BATCH_HINT, Harness
-from .client import HistoryError
+from .batch import ItemClient
+from .client import HistoryClient, HistoryError
 from .links import URL_ACTION, find_history_urls
-from .model import ChatError, compact
+from .model import ChatError, Model, compact
+from .terminal import TerminalUI
+from .ui.bridge import UIAdapter
 
 
-def pretty_json_text(value):
+def pretty_json_text(value: str) -> str:
     """
     Pretty-print complete JSON on display; keep compact JSON inside model
     context.
@@ -23,25 +31,26 @@ def pretty_json_text(value):
         return value
 
 
-async def converse(client, model, args, history, *, ui_override=None):
+async def converse(
+    client: Client, model: Model, args: Namespace, history: HistoryClient, *,
+    ui_override: TerminalUI | UIAdapter | None = None,
+) -> None:
     from .batch import BatchRouter, BatchRunner, Journal
     from .commands import HELP, install_completion
 
-    use_ui = (
+    use_ui: bool = (
         args.ui
         if args.ui is not None
         else sys.stdin.isatty() and sys.stdout.isatty()
     )
-    ui = ui_override
+    ui: TerminalUI | UIAdapter | None = ui_override
     if use_ui and ui is None:
-        from .terminal import TerminalUI
-
         ui = TerminalUI(
             model.name, allow_write=args.allow_write, show_thoughts=True
         )
-    tools = (await client.list_tools()).tools
+    tools: list[Tool] = (await client.list_tools()).tools
 
-    def make_reviewer(item_client):
+    def make_reviewer(item_client: ItemClient) -> Harness:
         return Harness(
             item_client,
             model,
@@ -54,7 +63,7 @@ async def converse(client, model, args, history, *, ui_override=None):
             on_event=ui.event if ui else None,
         )
 
-    def batch_event(kind, **data):
+    def batch_event(kind: str, **data: object) -> None:
         if ui:
             ui.event(kind, **data)
         elif kind in ("batch_started", "batch_progress"):
@@ -67,7 +76,7 @@ async def converse(client, model, args, history, *, ui_override=None):
                     file=sys.stderr,
                 )
 
-    runner = BatchRunner(
+    runner: BatchRunner = BatchRunner(
         history,
         client,
         make_reviewer,
@@ -78,8 +87,8 @@ async def converse(client, model, args, history, *, ui_override=None):
         on_event=batch_event,
         reuse_patterns=not args.no_patterns,
     )
-    router = BatchRouter(client, runner)
-    harness = Harness(
+    router: BatchRouter = BatchRouter(client, runner)
+    harness: Harness = Harness(
         router,
         model,
         tools,
@@ -91,18 +100,18 @@ async def converse(client, model, args, history, *, ui_override=None):
         on_event=ui.event if ui else None,
     )
     harness.messages[0]["content"] += BATCH_HINT
-    retry = None
+    retry: Callable[[], Coroutine[None, None, None]] | None = None
 
-    async def perform(operation):
+    async def perform(operation: Coroutine[None, None, None]) -> None:
         if ui and getattr(ui, "async_prompt", False):
             return await ui.execute(operation)
         return await operation
 
-    def retain_summary(summary):
+    def retain_summary(summary: dict[str, object]) -> None:
         harness.reset()
         harness.messages[0]["content"] += BATCH_HINT
 
-        small = {
+        small: dict[str, object] = {
             key: summary[key]
             for key in (
                 "job_id",
@@ -123,22 +132,24 @@ async def converse(client, model, args, history, *, ui_override=None):
         )
         router.completed = None
 
-    async def respond(text):
+    async def respond(text: str) -> None:
         nonlocal retry
         retry = partial(respond, text)
         runner.last_job_id = None
         router.user_request = text
         if ui:
             ui.begin(text)
-        result = None
+        result: str | None = None
         try:
-            prefetched = []
-            urls = find_history_urls(text)
+            prefetched: list[
+                tuple[str, dict[str, object], dict[str, object]]
+            ] = []
+            urls: list[str] = find_history_urls(text)
             if len(urls) > 4:
                 raise ChatError("Send at most four history links per request")
             for url in urls:
                 try:
-                    resolved = await asyncio.to_thread(
+                    resolved: dict[str, object] = await asyncio.to_thread(
                         history.execute, URL_ACTION, {"url": url}
                     )
                 except HistoryError as error:
@@ -164,24 +175,28 @@ async def converse(client, model, args, history, *, ui_override=None):
             if ui:
                 ui.finish(result)
 
-    async def run_batch(arguments, resume=False):
+    async def run_batch(
+        arguments: dict[str, object], resume: bool = False,
+    ) -> None:
         nonlocal retry
         retry = partial(run_batch, dict(arguments), resume=resume)
         runner.last_job_id = None
         if ui:
             ui.begin("Resume review job" if resume else "Review all warnings")
-        summary = None
+        summary: dict[str, object] | None = None
         try:
-            write = args.allow_write
+            write: bool = args.allow_write
             if resume:
-                journal = Journal(args.batch_state_dir, arguments["job_id"])
+                journal: Journal = Journal(
+                    args.batch_state_dir, arguments["job_id"]
+                )
                 try:
                     write = write or journal.get("write")
                 finally:
                     journal.db.close()
             summary = await runner.run(arguments, write=write)
             retain_summary(summary)
-            text = compact(
+            text: str = compact(
                 {
                     key: summary[key]
                     for key in ("job_id", "total", "states", "classifications")
@@ -214,7 +229,7 @@ async def converse(client, model, args, history, *, ui_override=None):
             if ui:
                 ui.finish()
 
-    async def start(operation):
+    async def start(operation: Coroutine[None, None, None]) -> None:
         try:
             await perform(operation)
         except (ChatError, HistoryError, ValueError, OSError) as error:
@@ -228,14 +243,14 @@ async def converse(client, model, args, history, *, ui_override=None):
         if args.resume:
             await start(run_batch({"job_id": args.resume}, resume=True))
         else:
-            selected = args.diff or args.batch
+            selected: list[str] = args.diff or args.batch
             try:
-                project = int(selected[0])
+                project: int = int(selected[0])
             except ValueError:
                 raise ChatError(
                     "Batch project ID must be an integer"
                 ) from None
-            values = {
+            values: dict[str, object] = {
                 "project_id": project,
                 "stream_id": selected[1],
                 "snapshot_id": selected[2],
@@ -261,7 +276,7 @@ async def converse(client, model, args, history, *, ui_override=None):
     if sys.stdin.isatty() and not (ui and getattr(ui, "async_prompt", False)):
         install_completion(args.batch_state_dir)
     if not ui:
-        write_mode = (
+        write_mode: str = (
             "review writes enabled" if args.allow_write else "read-only"
         )
         print(
@@ -272,7 +287,7 @@ async def converse(client, model, args, history, *, ui_override=None):
         )
     while True:
         try:
-            text = (
+            text: str = (
                 await ui.prompt_async()
                 if getattr(ui, "async_prompt", False)
                 else ui.prompt()
@@ -316,11 +331,11 @@ async def converse(client, model, args, history, *, ui_override=None):
                 await perform(retry())
                 continue
             if text.split()[0] in ("/batch", "/diff", "/resume"):
-                parts = shlex.split(text)
+                parts: list[str] = shlex.split(text)
                 if parts[0] == "/resume" and len(parts) == 2:
                     await perform(run_batch({"job_id": parts[1]}, resume=True))
                 elif parts[0] == "/batch" and len(parts) == 1:
-                    default_scope = await asyncio.to_thread(
+                    default_scope: dict[str, object] = await asyncio.to_thread(
                         history.execute, "current", {}
                     )
                     await perform(

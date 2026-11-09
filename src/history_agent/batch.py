@@ -3,6 +3,8 @@ Durable review jobs. Model conversations contain one checker and one
 warning.
 """
 
+from __future__ import annotations
+
 import copy
 import json
 import os
@@ -10,15 +12,17 @@ import re
 import sqlite3
 import uuid
 from collections import Counter
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
+from mcp import Client
 from mcp.types import CallToolResult, TextContent
 
-from . import patterns
+from . import agent, patterns
 from .classification import EVIDENCE_REQUIRED, REVIEW_CRITERIA, STATUSES
-from .client import HistoryError
+from .client import HistoryClient, HistoryError
 from .comments import review_comment
 from .comparison import COMPARE_ACTION, COMPARE_SCHEMA, scopes
 from .jobs import FINISHED_ITEM_STATES, JobRunningError, job_lock
@@ -31,8 +35,8 @@ from .verdict import (
     schema_issues,
 )
 
-BATCH_ACTION = "review_batch"
-BATCH_SCHEMA = {
+BATCH_ACTION: str = "review_batch"
+BATCH_SCHEMA: dict[str, object] = {
     "type": "object",
     "additionalProperties": False,
     "properties": {
@@ -56,12 +60,12 @@ BATCH_SCHEMA = {
         {"required": ["job_id"], "maxProperties": 1},
     ],
 }
-BATCH_PUBLIC_SCHEMA = copy.deepcopy(BATCH_SCHEMA)
+BATCH_PUBLIC_SCHEMA: dict[str, object] = copy.deepcopy(BATCH_SCHEMA)
 BATCH_PUBLIC_SCHEMA["oneOf"] = [
     {"not": {"required": ["job_id"]}},
     {"required": ["job_id"], "maxProperties": 1},
 ]
-BATCH_META = {
+BATCH_META: dict[str, object] = {
     "name": BATCH_ACTION,
     "read_only": False,
     "input_schema": BATCH_PUBLIC_SCHEMA,
@@ -75,7 +79,7 @@ BATCH_META = {
     "Resume with only job_id. "
     "Existing reviews are preserved by default.",
 }
-DIFF_ACTION = "review_diff"
+DIFF_ACTION: str = "review_diff"
 for key in ("base_project_id", "base_stream_id", "base_snapshot_id", "subset"):
     BATCH_SCHEMA["properties"][key] = copy.deepcopy(
         COMPARE_SCHEMA["properties"][key]
@@ -84,9 +88,9 @@ BATCH_SCHEMA["dependentRequired"] = {
     key: ["base_snapshot_id"]
     for key in ("base_project_id", "base_stream_id", "subset")
 }
-DIFF_SCHEMA = copy.deepcopy(BATCH_SCHEMA)
+DIFF_SCHEMA: dict[str, object] = copy.deepcopy(BATCH_SCHEMA)
 DIFF_SCHEMA["oneOf"][0]["required"].append("base_snapshot_id")
-DIFF_META = {
+DIFF_META: dict[str, object] = {
     "name": DIFF_ACTION,
     "read_only": False,
     "input_schema": DIFF_SCHEMA,
@@ -99,7 +103,7 @@ DIFF_META = {
     "including when called through history_read. "
     "Resume with only job_id.",
 }
-RESULT_SCHEMA = {
+RESULT_SCHEMA: dict[str, object] = {
     "type": "object",
     "additionalProperties": False,
     "required": ["classification", "comment", "evidence"],
@@ -139,7 +143,7 @@ RESULT_SCHEMA["properties"]["evidence"]["items"]["properties"]["snapshot_id"][
     "Concrete snapshot of the source that was actually read; "
     "required here, omitted from comment."
 )
-BATCH_INSTRUCTION = (
+BATCH_INSTRUCTION: str = (
     "This is an isolated batch item. Investigate only its "
     "assigned warning; no previous warning context exists. "
     "The host has fetched the current checker guide, warning, "
@@ -177,14 +181,14 @@ BATCH_INSTRUCTION = (
 )
 
 
-def reply(data):
+def reply(data: dict[str, object]) -> CallToolResult:
     return CallToolResult(
         content=[TextContent(type="text", text=compact(data))], is_error=False
     )
 
 
-def review_attributes(warning):
-    attributes = warning.get("attributes")
+def review_attributes(warning: dict[str, object]) -> dict[str, object]:
+    attributes: dict[str, object] = warning.get("attributes")
     if (
         not isinstance(attributes, dict)
         or "classification_id" not in attributes
@@ -194,19 +198,21 @@ def review_attributes(warning):
 
 
 class Journal:
-    def __init__(self, root, job_id=None):
-        self.root = Path(root)
+    def __init__(self, root: str | Path, job_id: str | None = None) -> None:
+        self.root: Path = Path(root)
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
-        self.id = job_id or uuid.uuid4().hex
+        self.id: str = job_id or uuid.uuid4().hex
         if not re.fullmatch(r"[a-f0-9]{32}", self.id):
             raise ChatError("Invalid batch job ID")
-        self.path = self.root / (self.id + ".sqlite3")
+        self.path: Path = self.root / (self.id + ".sqlite3")
         if job_id and not self.path.is_file():
             raise ChatError("Batch job does not exist: " + self.id)
         if not job_id:
-            fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+            fd: int = os.open(
+                self.path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600
+            )
             os.close(fd)
-        self.db = sqlite3.connect(
+        self.db: sqlite3.Connection = sqlite3.connect(
             self.path.resolve().as_uri() + "?mode=rw", uri=True
         )
         self.db.row_factory = sqlite3.Row
@@ -225,20 +231,24 @@ class Journal:
         with self.db:
             patterns.initialize(self.db)
 
-    def get(self, key, default=None):
-        row = self.db.execute(
+    def get(self, key: str, default: object = None) -> object:
+        row: sqlite3.Row | None = self.db.execute(
             "SELECT value FROM metadata WHERE key=?", (key,)
         ).fetchone()
         return json.loads(row[0]) if row else default
 
-    def set(self, key, value):
+    def set(self, key: str, value: object) -> None:
         with self.db:
             self.db.execute(
                 "INSERT OR REPLACE INTO metadata VALUES(?,?)",
                 (key, compact(value)),
             )
 
-    def update(self, warning_id, state, *, verdict=None, baseline=None):
+    def update(
+        self, warning_id: str, state: str, *,
+        verdict: dict[str, object] | None = None,
+        baseline: dict[str, object] | None = None,
+    ) -> None:
         with self.db:
             self.db.execute(
                 "UPDATE items SET state=?, verdict=COALESCE(?,verdict), "
@@ -251,11 +261,11 @@ class Journal:
                 ),
             )
 
-    def summary(self):
-        states = dict(
+    def summary(self) -> dict[str, object]:
+        states: dict[str, int] = dict(
             self.db.execute("SELECT state,COUNT(*) FROM items GROUP BY state")
         )
-        classes = Counter()
+        classes: Counter[str] = Counter()
         for row in self.db.execute(
             "SELECT verdict FROM items WHERE state IN ('saved','reviewed')"
         ):
@@ -272,7 +282,7 @@ class Journal:
         }
 
     @contextmanager
-    def lock(self):
+    def lock(self) -> Iterator[None]:
         try:
             with job_lock(self.path):
                 if not self.path.is_file():
@@ -288,12 +298,21 @@ class ItemClient:
     old conversations.
     """
 
-    def __init__(self, client, scope, record):
+    def __init__(
+        self, client: Client, scope: dict[str, str | int],
+        record: set[tuple[str, int, str]],
+    ) -> None:
+        self.client: Client
+        self.scope: dict[str, str | int]
+        self.record: set[tuple[str, int, str]]
         self.client, self.scope, self.record = client, scope, record
-        self.snapshots = {scope["snapshot_id"]}
+        self.snapshots: set[str] = {scope["snapshot_id"]}
 
-    def observe(self, action, args, result):
-        def overrides(value):
+    def observe(
+        self, action: str | None, args: dict[str, object],
+        result: dict[str, object],
+    ) -> None:
+        def overrides(value: object) -> None:
             if isinstance(value, dict):
                 for key, entry in value.items():
                     if (
@@ -318,22 +337,24 @@ class ItemClient:
                         (args["file"], line["number"], args["snapshot_id"])
                     )
 
-    async def call_tool(self, name, arguments):
+    async def call_tool(
+        self, name: str, arguments: dict[str, object],
+    ) -> CallToolResult:
         if name not in ("history_discover", "history_read"):
             raise ChatError(
                 "Batch model cannot write reviews or start another job"
             )
-        args = arguments.get("arguments", {})
+        args: dict[str, object] = arguments.get("arguments", {})
         if not isinstance(args, dict):
             raise ChatError("Batch read arguments must be an object")
         if name == "history_read":
-            action = arguments.get("action")
-            assigned_checker = self.scope.get("checker_name")
+            action: str | None = arguments.get("action")
+            assigned_checker: str | None = self.scope.get("checker_name")
             if assigned_checker and action in (
                 "agent_checker_info",
                 "agent_checker_documentation",
             ):
-                requested = args.get("checker_name")
+                requested: object = args.get("checker_name")
                 if (
                     not isinstance(requested, str)
                     or requested.casefold() != assigned_checker.casefold()
@@ -342,7 +363,7 @@ class ItemClient:
                         "Batch checker documentation belongs to a "
                         "different item"
                     )
-            scoped = {
+            scoped: set[str] = {
                 "get_warning",
                 "get_warning_trace",
                 "get_warning_trace_and_role",
@@ -367,7 +388,7 @@ class ItemClient:
                 != self.scope["stream_id"]
             ):
                 raise ChatError("Batch read left the assigned branch")
-            snapshot = args.get("snapshot_id")
+            snapshot: str | None = args.get("snapshot_id")
             if (
                 snapshot
                 and snapshot not in self.snapshots
@@ -379,10 +400,10 @@ class ItemClient:
                 raise ChatError(
                     "Batch read used a snapshot outside the warning/trace"
                 )
-        result = await self.client.call_tool(name, arguments)
+        result: CallToolResult = await self.client.call_tool(name, arguments)
         if name == "history_read" and not result.is_error:
             try:
-                data = json.loads(
+                data: dict[str, object] = json.loads(
                     "".join(
                         part.text
                         for part in result.content
@@ -397,36 +418,44 @@ class ItemClient:
 
 class BatchRunner:
     def __init__(
-        self,
-        history,
-        client,
-        reviewer_factory,
-        root,
-        model_identity,
-        *,
-        allow_write=False,
-        allow_overwrite=False,
-        on_event=None,
-        reuse_patterns=True,
-    ):
+        self, history: HistoryClient, client: Client,
+        reviewer_factory: Callable[[ItemClient], agent.Harness],
+        root: str | Path, model_identity: dict[str, str], *,
+        allow_write: bool = False, allow_overwrite: bool = False,
+        on_event: Callable[..., None] | None = None,
+        reuse_patterns: bool = True,
+    ) -> None:
+        self.history: HistoryClient
+        self.client: Client
+        self.reviewer_factory: Callable[[ItemClient], agent.Harness]
         self.history, self.client, self.reviewer_factory = (
             history,
             client,
             reviewer_factory,
         )
+        self.root: Path
+        self.model_identity: dict[str, str]
         self.root, self.model_identity = Path(root), model_identity
+        self.allow_write: bool
+        self.allow_overwrite: bool
         self.allow_write, self.allow_overwrite = allow_write, allow_overwrite
-        self.on_event = on_event or (lambda *args, **kwargs: None)
-        self.last_summary = None
-        self.last_job_id = None
-        self.reuse_patterns = reuse_patterns
+        self.on_event: Callable[..., None] = on_event or (
+            lambda *args, **kwargs: None
+        )
+        self.last_summary: dict[str, object] | None = None
+        self.last_job_id: str | None = None
+        self.reuse_patterns: bool = reuse_patterns
 
-    async def read(self, action, args):
+    async def read(
+        self, action: str, args: dict[str, object],
+    ) -> dict[str, object]:
         import asyncio
 
         return await asyncio.to_thread(self.history.execute, action, args)
 
-    async def run(self, args, *, write=False):
+    async def run(
+        self, args: dict[str, object], *, write: bool = False,
+    ) -> dict[str, object]:
         self.last_job_id = None
         if not Draft202012Validator(BATCH_SCHEMA).is_valid(args):
             raise ChatError(
@@ -438,18 +467,20 @@ class BatchRunner:
             raise ChatError(
                 "Replacing existing batch reviews requires --overwrite-reviews"
             )
-        job = Journal(self.root, args.get("job_id"))
+        job: Journal = Journal(self.root, args.get("job_id"))
         self.last_job_id = job.id
         try:
             with job.lock():
                 if not args.get("job_id"):
-                    scope = {
+                    scope: dict[str, str | int] = {
                         key: args[key]
                         for key in ("project_id", "stream_id", "snapshot_id")
                     }
                     if args.get("base_snapshot_id"):
+                        current: dict[str, str | int]
+                        base: dict[str, str | int]
                         current, base = scopes(args)
-                        subset = args.get("subset", "appeared")
+                        subset: str = args.get("subset", "appeared")
                         job.set(
                             "comparison",
                             {
@@ -499,10 +530,10 @@ class BatchRunner:
                 self.on_event("batch_started", job_id=job.id)
                 if not job.get("queue_complete"):
                     await self.enumerate(job)
-                statuses = await self.read(
+                statuses: dict[str, object] = await self.read(
                     "get_value_filter", {**job.get("scope"), "field": "status"}
                 )
-                ids = {
+                ids: dict[str, int] = {
                     value["name"]: value["id"]
                     for value in statuses.get("classification", [])
                 }
@@ -510,8 +541,8 @@ class BatchRunner:
                     raise ChatError(
                         "History classification catalog is incomplete"
                     )
-                placeholders = ",".join("?" for _ in FINISHED_ITEM_STATES)
-                rows = job.db.execute(
+                placeholders: str = ",".join("?" for _ in FINISHED_ITEM_STATES)
+                rows: list[sqlite3.Row] = job.db.execute(
                     "SELECT * FROM items WHERE state NOT IN "
                     f"({placeholders}) "
                     "ORDER BY checker COLLATE NOCASE,ordinal",
@@ -531,15 +562,15 @@ class BatchRunner:
             self.last_summary = job.summary()
             job.db.close()
 
-    async def enumerate(self, job):
+    async def enumerate(self, job: Journal) -> None:
         if job.get("comparison"):
             await self.enumerate_diff(job)
             return
-        scope = job.get("scope")
+        scope: dict[str, str | int] = job.get("scope")
         if job.get("checker_name"):
-            checkers = [job.get("checker_name")]
+            checkers: list[str] = [job.get("checker_name")]
         else:
-            catalog = await self.read(
+            catalog: dict[str, object] = await self.read(
                 "get_value_filter", {**scope, "field": "warn_types"}
             )
             checkers = sorted(
@@ -552,11 +583,11 @@ class BatchRunner:
             )
         with job.db:
             job.db.execute("DELETE FROM items")
-        ordinal = 0
+        ordinal: int = 0
         for checker in checkers:
-            offset = 0
+            offset: int = 0
             while True:
-                page = await self.read(
+                page: dict[str, object] = await self.read(
                     "agent_find_warnings",
                     {
                         **scope,
@@ -565,7 +596,7 @@ class BatchRunner:
                         "limit": 100,
                     },
                 )
-                warnings = page.get("warnings")
+                warnings: list[dict[str, object]] = page.get("warnings")
                 if not isinstance(warnings, list):
                     raise ChatError("Invalid warning page")
                 with job.db:
@@ -598,7 +629,7 @@ class BatchRunner:
                 )
                 if not page.get("has_more"):
                     break
-                next_offset = page.get("next_offset")
+                next_offset: int = page.get("next_offset")
                 if (
                     not warnings
                     or not isinstance(next_offset, int)
@@ -608,9 +639,9 @@ class BatchRunner:
                 offset = next_offset
         job.set("queue_complete", True)
 
-    async def enumerate_diff(self, job):
-        comparison = job.get("comparison")
-        values = {
+    async def enumerate_diff(self, job: Journal) -> None:
+        comparison: dict[str, object] = job.get("comparison")
+        values: dict[str, object] = {
             **comparison["current"],
             **{
                 "base_" + key: value
@@ -623,9 +654,11 @@ class BatchRunner:
             values["checker_name"] = job.get("checker_name")
         with job.db:
             job.db.execute("DELETE FROM items")
+        offset: int
+        ordinal: int
         offset = ordinal = 0
         while True:
-            page = await self.read(
+            page: dict[str, object] = await self.read(
                 COMPARE_ACTION, {**values, "offset": offset}
             )
             if (
@@ -637,12 +670,12 @@ class BatchRunner:
                 raise ChatError(
                     "Comparison page returned a different scope/subset"
                 )
-            warnings = page.get("warnings")
+            warnings: list[dict[str, object]] = page.get("warnings")
             if not isinstance(warnings, list):
                 raise ChatError("Invalid comparison warning page")
             with job.db:
                 for warning in warnings:
-                    checker = warning.get("checker_name")
+                    checker: str = warning.get("checker_name")
                     if not isinstance(checker, str) or not checker:
                         raise ChatError(
                             "Comparison warning has no checker name"
@@ -675,7 +708,7 @@ class BatchRunner:
             )
             if not page.get("has_more"):
                 break
-            next_offset = page.get("next_offset")
+            next_offset: int = page.get("next_offset")
             if (
                 not warnings
                 or not isinstance(next_offset, int)
@@ -685,24 +718,31 @@ class BatchRunner:
             offset = next_offset
         job.set("queue_complete", True)
 
-    async def current(self, scope, warning_id):
-        result = await self.read(
+    async def current(
+        self, scope: dict[str, str | int], warning_id: str,
+    ) -> dict[str, object]:
+        result: dict[str, object] = await self.read(
             "get_warning",
             {**scope, "snapshot_id": "HEAD", "warning_id": warning_id},
         )
-        warning = result.get("warning", {})
+        warning: dict[str, object] = result.get("warning", {})
         if warning.get("warning_id") != warning_id:
             raise ChatError("Current warning identity mismatch")
         return review_attributes(warning)
 
-    async def process(self, job, row, ids):
+    async def process(
+        self, job: Journal, row: sqlite3.Row, ids: dict[str, int],
+    ) -> None:
+        warning_id: str
+        checker: str
+        scope: dict[str, str | int]
         warning_id, checker, scope = (
             row["warning_id"],
             row["checker"],
             job.get("scope"),
         )
-        summary = job.summary()
-        completed = sum(
+        summary: dict[str, object] = job.summary()
+        completed: int = sum(
             summary["states"].get(state, 0) for state in FINISHED_ITEM_STATES
         )
         self.on_event(
@@ -713,9 +753,9 @@ class BatchRunner:
             checker=checker,
             warning_id=warning_id,
         )
-        current = await self.current(scope, warning_id)
+        current: dict[str, object] = await self.current(scope, warning_id)
         if row["state"] in ("saving", "uncertain"):
-            verdict = json.loads(row["verdict"])
+            verdict: dict[str, object] = json.loads(row["verdict"])
             if self.matches(current, verdict, ids):
                 job.update(warning_id, "saved")
                 return
@@ -724,6 +764,7 @@ class BatchRunner:
                 "history. It will not be retried."
             )
         if row["state"] == "proposed":
+            baseline: dict[str, object]
             verdict, baseline = (
                 json.loads(row["verdict"]),
                 json.loads(row["baseline"]),
@@ -798,21 +839,28 @@ class BatchRunner:
         )
 
     @staticmethod
-    def matches(current, verdict, ids):
+    def matches(
+        current: dict[str, object], verdict: dict[str, object],
+        ids: dict[str, int],
+    ) -> bool:
         return (
             current.get("classification_id")
             == ids[STATUSES[verdict["classification"]]]
             and current.get("comment") == verdict["comment"]
         )
 
-    async def investigate(self, job, row, baseline):
+    async def investigate(
+        self, job: Journal, row: sqlite3.Row, baseline: dict[str, object],
+    ) -> dict[str, object]:
+        scope: dict[str, str | int]
+        warning: dict[str, object]
         scope, warning = job.get("scope"), json.loads(row["warning"])
-        cache = job.db.execute(
+        cache: sqlite3.Row | None = job.db.execute(
             "SELECT value FROM checker_cache WHERE checker=?",
             (row["checker"],),
         ).fetchone()
         if cache:
-            checker_info = json.loads(cache[0])
+            checker_info: dict[str, object] = json.loads(cache[0])
         else:
             try:
                 checker_info = await self.read(
@@ -840,20 +888,20 @@ class BatchRunner:
                     "INSERT INTO checker_cache VALUES(?,?)",
                     (row["checker"], compact(checker_info)),
                 )
-        evidence = set()
-        item_client = ItemClient(
+        evidence: set[tuple[str, int, str]] = set()
+        item_client: ItemClient = ItemClient(
             self.client, {**scope, "checker_name": row["checker"]}, evidence
         )
-        comparison = job.get("comparison")
+        comparison: dict[str, object] | None = job.get("comparison")
         if comparison:
             for side in ("current", "base"):
-                other = comparison[side]
+                other: dict[str, str | int] = comparison[side]
                 if (
                     other["project_id"] == scope["project_id"]
                     and other["stream_id"] == scope["stream_id"]
                 ):
                     item_client.snapshots.add(other["snapshot_id"])
-        reviewer = self.reviewer_factory(item_client)
+        reviewer: agent.Harness = self.reviewer_factory(item_client)
         # Never carry another warning or checker's conversation into this one.
         reviewer.reset()
         reviewer.set_result_schema(RESULT_SCHEMA)
@@ -867,12 +915,12 @@ class BatchRunner:
                 ),
             }
         )
-        detail = await self.read(
+        detail: dict[str, object] = await self.read(
             "get_warning", {**scope, "warning_id": row["warning_id"]}
         )
         if detail.get("warning", {}).get("warning_id") != row["warning_id"]:
             raise ChatError("Snapshot warning identity mismatch")
-        packets = [
+        packets: list[tuple[str, dict[str, object], dict[str, object]]] = [
             (
                 "agent_checker_info",
                 {"checker_name": row["checker"]},
@@ -884,7 +932,7 @@ class BatchRunner:
                 {**detail, "host_current_review": baseline},
             ),
         ]
-        reviews_args = {
+        reviews_args: dict[str, str | int] = {
             "project_id": scope["project_id"],
             "stream_id": scope["stream_id"],
             "warning_id": row["warning_id"],
@@ -896,13 +944,18 @@ class BatchRunner:
                 await self.read("get_all_reviews", reviews_args),
             )
         )
-        trace_args = {**scope, "warning_id": row["warning_id"]}
-        trace = await self.read("get_warning_trace_and_role", trace_args)
+        trace_args: dict[str, str | int] = {
+            **scope,
+            "warning_id": row["warning_id"],
+        }
+        trace: dict[str, object] = await self.read(
+            "get_warning_trace_and_role", trace_args
+        )
         packets.append(("get_warning_trace_and_role", trace_args, trace))
         item_client.observe("get_warning_trace_and_role", trace_args, trace)
-        location = warning.get("location", {})
+        location: dict[str, object] = warning.get("location", {})
         if location.get("file_path") and isinstance(location.get("line"), int):
-            source_args = {
+            source_args: dict[str, str | int] = {
                 "project_id": scope["project_id"],
                 "snapshot_id": location.get("snapshot_override")
                 or scope["snapshot_id"],
@@ -913,7 +966,9 @@ class BatchRunner:
             }
             item_client.snapshots.add(source_args["snapshot_id"])
             try:
-                source = await self.read("agent_source", source_args)
+                source: dict[str, object] = await self.read(
+                    "agent_source", source_args
+                )
                 packets.append(("agent_source", source_args, source))
             except HistoryError as error:
                 if error.auth_error or str(error).startswith(
@@ -924,7 +979,7 @@ class BatchRunner:
                     ("agent_source", source_args, {"error": str(error)})
                 )
         for index, (action, arguments, data) in enumerate(packets):
-            text = compact(data)
+            text: str = compact(data)
             if len(text.encode()) > reviewer.max_tool_result_bytes:
                 text = compact(
                     {
@@ -936,7 +991,7 @@ class BatchRunner:
                 )
             else:
                 item_client.observe(action, arguments, data)
-            call_id = "batch-read-" + str(index)
+            call_id: str = "batch-read-" + str(index)
             reviewer.messages.extend(
                 [
                     {
@@ -967,7 +1022,7 @@ class BatchRunner:
                 arguments=arguments,
                 response=text,
             )
-        prompt = (
+        prompt: str = (
             "Investigate the one warning identified above. "
             "Project/branch/snapshot: "
             + compact(scope)
@@ -985,7 +1040,7 @@ class BatchRunner:
                 "fix. "
                 "Do not review warnings outside this selected difference."
             )
-        hints = (
+        hints: list[dict[str, str | list[str]]] = (
             patterns.recall(job, row["checker"]) if self.reuse_patterns else []
         )
         if hints:
@@ -999,7 +1054,7 @@ class BatchRunner:
                 checker=row["checker"],
                 patterns=hints,
             )
-        pending = job.get("pending_response")
+        pending: dict[str, object] | None = job.get("pending_response")
         if (
             isinstance(pending, dict)
             and pending.get("warning_id") == row["warning_id"]
@@ -1019,7 +1074,7 @@ class BatchRunner:
             and pending.get("baseline") == baseline
             and not pending.get("retry_investigation")
         ):
-            raw = pending["raw"]
+            raw: str = pending["raw"]
             evidence.update(tuple(address) for address in pending["evidence"])
             reviewer.messages.extend(
                 [
@@ -1029,7 +1084,7 @@ class BatchRunner:
             )
         else:
             raw = await reviewer.ask(prompt)
-        original_raw = (
+        original_raw: str = (
             pending.get("original_raw", pending["raw"])
             if isinstance(pending, dict)
             and pending.get("warning_id") == row["warning_id"]
@@ -1038,7 +1093,10 @@ class BatchRunner:
             else raw
         )
 
-        def retain_response(issues=None, *, retry_investigation=False):
+        def retain_response(
+            issues: list[str] | None = None, *,
+            retry_investigation: bool = False,
+        ) -> None:
             job.set(
                 "pending_response",
                 {
@@ -1056,12 +1114,12 @@ class BatchRunner:
         # must not lose its work.
         retain_response()
 
-        parsed_draft = None
+        parsed_draft: dict[str, object] | None = None
 
-        def read_verdict():
+        def read_verdict() -> dict[str, object]:
             nonlocal parsed_draft
             try:
-                verdict = normalize_verdict(
+                verdict: dict[str, object] = normalize_verdict(
                     extract_verdict(raw),
                     evidence,
                     scope,
@@ -1079,7 +1137,7 @@ class BatchRunner:
             except ChatError as error:
                 retain_response([str(error)], retry_investigation=True)
                 raise
-            issues = schema_issues(
+            issues: list[str] = schema_issues(
                 verdict, Draft202012Validator(RESULT_SCHEMA)
             )
             if issues:
@@ -1087,10 +1145,10 @@ class BatchRunner:
             return verdict
 
         try:
-            verdict = read_verdict()
+            verdict: dict[str, object] = read_verdict()
         except VerdictFormatError as error:
-            previous = copy.deepcopy(parsed_draft)
-            issues = [str(error)]
+            previous: dict[str, object] | None = copy.deepcopy(parsed_draft)
+            issues: list[str] = [str(error)]
             retain_response(issues)
             self.on_event(
                 "batch_format_repair",
@@ -1099,7 +1157,7 @@ class BatchRunner:
             )
             # A short isolated formatting turn, without source, investigation
             # tools or writes.
-            formatter = self.reviewer_factory(item_client)
+            formatter: agent.Harness = self.reviewer_factory(item_client)
             formatter.tools, formatter.allowed = [], set()
             formatter.messages = [
                 {
@@ -1139,7 +1197,7 @@ class BatchRunner:
                     "formatting only. No review was saved"
                 ) from None
             if isinstance(previous, dict):
-                classification = previous.get("classification")
+                classification: object = previous.get("classification")
                 if (
                     isinstance(classification, str)
                     and classification in STATUSES
@@ -1154,7 +1212,7 @@ class BatchRunner:
                         "review was "
                         "saved"
                     )
-                addresses = previous.get("evidence")
+                addresses: object = previous.get("evidence")
                 if isinstance(addresses, list) and all(
                     isinstance(address, dict)
                     and isinstance(address.get("file"), str)
@@ -1163,11 +1221,11 @@ class BatchRunner:
                     and isinstance(address.get("snapshot_id"), str)
                     for address in addresses
                 ):
-                    cited = {
+                    cited: set[tuple[str, int, str]] = {
                         (a["file"], a["line"], a["snapshot_id"])
                         for a in addresses
                     }
-                    repaired = {
+                    repaired: set[tuple[str, int, str]] = {
                         (a["file"], a["line"], a["snapshot_id"])
                         for a in verdict["evidence"]
                     }
@@ -1226,13 +1284,17 @@ class BatchRouter:
     lazily.
     """
 
-    def __init__(self, client, runner):
+    def __init__(self, client: Client, runner: BatchRunner) -> None:
+        self.client: Client
+        self.runner: BatchRunner
         self.client, self.runner = client, runner
-        self.completed = None
-        self.user_request = ""
+        self.completed: dict[str, object] | None = None
+        self.user_request: str = ""
 
-    async def call_tool(self, name, arguments):
-        action = arguments.get("action")
+    async def call_tool(
+        self, name: str, arguments: dict[str, object],
+    ) -> CallToolResult:
+        action: str | None = arguments.get("action")
         if action in (BATCH_ACTION, DIFF_ACTION):
             if name == "history_discover":
                 return reply(
@@ -1240,7 +1302,7 @@ class BatchRouter:
                 )
             if name not in ("history_read", "history_write"):
                 raise ChatError("Unsupported batch tool")
-            raw = arguments.get("arguments", {})
+            raw: dict[str, object] = arguments.get("arguments", {})
             if not isinstance(raw, dict):
                 raise ChatError("review_batch arguments must be an object")
             if action == DIFF_ACTION and not Draft202012Validator(
@@ -1250,7 +1312,7 @@ class BatchRouter:
                     "Invalid review_diff arguments; specify current/base "
                     "snapshots or only job_id to resume"
                 )
-            values = dict(raw)
+            values: dict[str, object] = dict(raw)
             if (
                 action == BATCH_ACTION
                 and "job_id" not in values
@@ -1269,7 +1331,7 @@ class BatchRouter:
 
                 from .current import resolve_current
 
-                defaults = await asyncio.to_thread(
+                defaults: dict[str, object] = await asyncio.to_thread(
                     resolve_current,
                     self.runner.history,
                     {
@@ -1281,13 +1343,13 @@ class BatchRouter:
                 )
                 values = {**defaults["scope"], **values}
             if "job_id" not in values and self.user_request:
-                instructions = values.get("instructions", "")
+                instructions: str = values.get("instructions", "")
                 values["instructions"] = self.user_request + (
                     "\nRetained project constraints: " + instructions
                     if instructions and instructions != self.user_request
                     else ""
                 )
-            result = await self.runner.run(
+            result: dict[str, object] | CallToolResult = await self.runner.run(
                 values,
                 write=self.runner.allow_write or name == "history_write",
             )
@@ -1295,7 +1357,7 @@ class BatchRouter:
             return reply(result)
         result = await self.client.call_tool(name, arguments)
         if name == "history_discover" and not action and not result.is_error:
-            data = json.loads(
+            data: dict[str, object] = json.loads(
                 "".join(
                     part.text for part in result.content if part.type == "text"
                 )

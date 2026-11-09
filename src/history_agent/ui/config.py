@@ -1,11 +1,15 @@
 """A small, explicit settings editor shown before connecting to services."""
 
+from __future__ import annotations
+
+from argparse import Namespace
 from copy import copy
 from pathlib import Path
 
 from textual import on
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, VerticalScroll
+from textual.dom import DOMNode
 from textual.screen import ModalScreen
 from textual.widgets import (
     Button,
@@ -16,6 +20,7 @@ from textual.widgets import (
     Select,
     Static,
 )
+from textual.widgets.select import NoSelection
 
 from ..client import Settings
 from ..config import (
@@ -33,20 +38,20 @@ from .settings_help import SETTINGS_HELP
 
 
 class ConfigurationScreen(ModalScreen):
-    TITLE = "History settings"
-    CSS_PATH = Path(__file__).with_name("config.tcss")
-    BINDINGS = [
+    TITLE: str = "History settings"
+    CSS_PATH: Path = Path(__file__).with_name("config.tcss")
+    BINDINGS: list[tuple[str, ...]] = [
         ("escape", "cancel", "Back"),
         ("ctrl+q", "cancel", "Back"),
         ("ctrl+c", "cancel", "Back"),
     ]
 
-    def __init__(self, args):
+    def __init__(self, args: Namespace) -> None:
         super().__init__()
-        self.args = args
+        self.args: Namespace = args
 
     def compose(self) -> ComposeResult:
-        history = Settings.from_env()
+        history: Settings = Settings.from_env()
         with VerticalScroll(id="settings"):
             yield Static("History", id="settings-title")
             yield Static(
@@ -113,19 +118,19 @@ class ConfigurationScreen(ModalScreen):
                 yield Button("Save and start", variant="primary", id="save")
                 yield Button("Cancel", id="cancel")
 
-    def on_mount(self):
+    def on_mount(self) -> None:
         for name, description in SETTINGS_HELP.items():
             self.query_one("#" + name).tooltip = description
         for label in self.query(Label):
-            siblings = list(label.parent.children)
-            index = siblings.index(label) + 1
+            siblings: list[DOMNode] = list(label.parent.children)
+            index: int = siblings.index(label) + 1
             if index < len(siblings):
                 label.tooltip = SETTINGS_HELP.get(siblings[index].id)
         self.update_placeholders()
         self.query_one("#model_url", Input).focus()
 
-    def update_placeholders(self):
-        provider = self.query_one("#provider", Select).value
+    def update_placeholders(self) -> None:
+        provider: str | NoSelection = self.query_one("#provider", Select).value
         self.query_one(
             "#model_url", Input
         ).placeholder = PROVIDER_DEFAULTS.get(
@@ -138,12 +143,12 @@ class ConfigurationScreen(ModalScreen):
         )
 
     @on(Select.Changed, "#provider")
-    def provider_changed(self):
+    def provider_changed(self) -> None:
         self.update_placeholders()
 
     @on(Button.Pressed, "#save")
-    def save(self):
-        args = copy(self.args)
+    def save(self) -> None:
+        args: Namespace = copy(self.args)
         try:
             args.provider = self.query_one("#provider", Select).value
             for name in ("model_url", "model", "history_url", "model_key_env"):
@@ -167,7 +172,9 @@ class ConfigurationScreen(ModalScreen):
             if not args.model_url and args.provider == "openai-compatible":
                 args.model_url = "http://127.0.0.1:8000/v1"
             for name in LIMIT_FIELDS:
-                convert = float if name == "timeout" else int
+                convert: type[int] | type[float] = (
+                    float if name == "timeout" else int
+                )
                 setattr(
                     args,
                     name,
@@ -199,19 +206,19 @@ class ConfigurationScreen(ModalScreen):
         self.dismiss(args)
 
     @on(Button.Pressed, "#cancel")
-    def action_cancel(self):
+    def action_cancel(self) -> None:
         self.dismiss()
 
 
 class ConfigurationApp(App):
     """Standalone settings entry point for initial setup and --configure."""
 
-    TITLE = "History settings"
-    ENABLE_COMMAND_PALETTE = False
+    TITLE: str = "History settings"
+    ENABLE_COMMAND_PALETTE: bool = False
 
-    def __init__(self, args):
+    def __init__(self, args: Namespace) -> None:
         super().__init__()
-        self.args = args
+        self.args: Namespace = args
 
-    def on_mount(self):
+    def on_mount(self) -> None:
         self.push_screen(ConfigurationScreen(self.args), self.exit)

@@ -2,9 +2,11 @@
 Local slash commands and terminal completion; nothing is sent to the model.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 
-COMMANDS = (
+COMMANDS: tuple[str, ...] = (
     "/help",
     "/config",
     "/reset",
@@ -15,7 +17,7 @@ COMMANDS = (
     "/quit",
     "/quite",
 )
-HELP = """Commands (Tab completes names; ↑/↓ recall this session's input):
+HELP: str = """Commands (Tab completes names; ↑/↓ recall this session's input):
   /help                               Show this help
   /config                             Open settings in the terminal UI
                                       (or launch with --configure)
@@ -31,19 +33,19 @@ Validated batch reviews are saved immediately in live mode.
 Use --read-only to keep results local."""
 
 
-def install_completion(state_dir):
+def install_completion(state_dir: str | Path) -> None:
     try:
         import readline
     except ImportError:
         return
 
-    root = Path(state_dir)
+    root: Path = Path(state_dir)
 
-    def complete(text, state):
+    def complete(text: str, state: int) -> str | None:
         try:
-            before = readline.get_line_buffer()[: readline.get_begidx()]
+            before: str = readline.get_line_buffer()[: readline.get_begidx()]
             if not before.strip():
-                matches = [
+                matches: list[str] = [
                     command for command in COMMANDS if command.startswith(text)
                 ]
             elif before.split() == ["/resume"]:

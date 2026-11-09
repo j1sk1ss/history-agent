@@ -6,8 +6,10 @@ separately and always takes precedence over this fallback.
 
 from __future__ import annotations
 
-CURRENT_ACTION = "current"
-CURRENT_META = {
+from . import client as history_client
+
+CURRENT_ACTION: str = "current"
+CURRENT_META: dict[str, object] = {
     "name": CURRENT_ACTION,
     "description": (
         "Resolve a default concrete review scope without asking the "
@@ -30,32 +32,39 @@ CURRENT_META = {
 }
 
 
-def _named_branch(item):
+def _named_branch(item: object) -> str | None:
     if isinstance(item, str):
         return item
     if isinstance(item, dict):
         for key in ("stream_id", "branch_name", "name", "branch", "stream"):
-            name = item.get(key)
+            name: object = item.get(key)
             if isinstance(name, str) and name:
                 return name
     return None
 
 
-def resolve_current(client, args, error_type):
+def resolve_current(
+    client: history_client.HistoryClient, args: dict[str, str | int],
+    error_type: type[Exception],
+) -> dict[str, object]:
     if args.get("project_id") is not None and args.get("project_name"):
         raise error_type("Choose project_id or project_name, not both")
-    groups = client.execute("get_projects", {}).get("project_groups", [])
-    projects = []
+    groups: list[dict[str, object]] = client.execute("get_projects", {}).get(
+        "project_groups", []
+    )
+    projects: list[dict[str, str | int]] = []
     if not isinstance(groups, list):
         raise error_type("History project catalog is invalid")
     for group in groups:
         if not isinstance(group, dict) or "project_group_id" not in group:
             continue
-        data = client.execute(
+        data: dict[str, object] = client.execute(
             "get_project_group_info",
             {"project_group_id": group["project_group_id"]},
         )
-        entries = data.get("project_group", {}).get("projects", [])
+        entries: list[str | dict[str, object]] | None = data.get(
+            "project_group", {}
+        ).get("projects", [])
         if not isinstance(entries, list):
             continue
         for project in entries:
@@ -99,11 +108,11 @@ def resolve_current(client, args, error_type):
             item["project_id"],
         )
     )
-    project = projects[0]
+    project: dict[str, str | int] = projects[0]
     if "stream_id" in args:
-        branch = args["stream_id"]
+        branch: str = args["stream_id"]
     else:
-        info = client.execute(
+        info: dict[str, object] = client.execute(
             "branches", {"project_id": project["project_id"]}
         )
         entries = next(
@@ -124,14 +133,14 @@ def resolve_current(client, args, error_type):
                 "History did not return branches for the selected project; "
                 "specify stream_id"
             )
-        names = sorted(
+        names: list[str] = sorted(
             set(name for item in entries if (name := _named_branch(item))),
             key=lambda value: (value.casefold(), value),
         )
         if not names:
             raise error_type("No branches found; specify stream_id")
         branch = names[0]
-    result = client.execute(
+    result: dict[str, object] = client.execute(
         "get_snapshots",
         {
             "project_id": project["project_id"],
@@ -139,14 +148,14 @@ def resolve_current(client, args, error_type):
             "number": 1,
         },
     )
-    snapshots = result.get("snapshots", [])
+    snapshots: list[dict[str, object]] = result.get("snapshots", [])
     if (
         not isinstance(snapshots, list)
         or not snapshots
         or not isinstance(snapshots[0], dict)
     ):
         raise error_type("No snapshot in the selected project/branch")
-    snapshot = snapshots[0].get("snapshot_id")
+    snapshot: str = snapshots[0].get("snapshot_id")
     if (
         not isinstance(snapshot, str)
         or not snapshot

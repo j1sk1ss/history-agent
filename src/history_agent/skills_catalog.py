@@ -1,8 +1,10 @@
 """Small, explicit model skills. Individual skill text is loaded on demand."""
 
+from __future__ import annotations
+
 from importlib.resources import files
 
-SKILLS = {
+SKILLS: dict[str, str] = {
     "history-current": "Select default project, branch and concrete snapshot; "
     "explicit URLs override defaults.",
     "history-review": "Investigate one warning against checker documentation, "
@@ -16,14 +18,14 @@ SKILLS = {
 }
 
 
-def catalog():
+def catalog() -> list[dict[str, str]]:
     return [
         {"name": name, "description": description}
         for name, description in SKILLS.items()
     ]
 
 
-def read_skill(name):
+def read_skill(name: str) -> str:
     if name not in SKILLS:
         raise ValueError("Unknown history skill: " + str(name))
     return (
