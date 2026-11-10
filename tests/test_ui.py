@@ -6,7 +6,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 from textual.containers import VerticalScroll
-from textual.widgets import Button, Checkbox, Collapsible, Input, Select
+from textual.widgets import (
+    Button,
+    Checkbox,
+    Collapsible,
+    Input,
+    Select,
+    Static,
+)
 
 from history_agent.configuration.defaults import load_defaults
 from history_agent.interfaces.cli import parse_args
@@ -365,6 +372,13 @@ class JobInterfaceTest(unittest.IsolatedAsyncioTestCase):
 
 class ConfigurationInterfaceTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        for name in ("probe_model_connection", "probe_system_one_connection"):
+            probe = patch(
+                "history_agent.ui.config." + name,
+                return_value=(False, "Test endpoint unavailable"),
+            )
+            probe.start()
+            self.addCleanup(probe.stop)
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.path = Path(directory.name) / "chat.json"
@@ -374,6 +388,34 @@ class ConfigurationInterfaceTest(unittest.IsolatedAsyncioTestCase):
         )
         environment.start()
         self.addCleanup(environment.stop)
+
+    async def test_connection_squares_refresh_after_settings_change(self):
+        app = ConfigurationApp(parse_args(["--system-one-model", "fast"]))
+        with patch(
+            "history_agent.ui.config.probe_model_connection",
+            return_value=(True, "Main model answered"),
+        ), patch(
+            "history_agent.ui.config.probe_system_one_connection",
+            side_effect=lambda args: (
+                args.system_one_model == "fast", "System 1 test response"
+            ),
+        ):
+            async with app.run_test(size=(100, 60)) as pilot:
+                screen = app.screen
+                if screen.connection_timer:
+                    screen.connection_timer.stop()
+                await pilot.click("#check-connections")
+                await app.workers.wait_for_complete()
+                main = screen.query_one("#model-status", Static)
+                fast = screen.query_one("#system-one-status", Static)
+                self.assertIn("[green]■", str(main.content))
+                self.assertIn("[green]■", str(fast.content))
+                self.assertEqual(main.tooltip, "Main model answered")
+                screen.query_one("#system_one_model", Input).value = "offline"
+                await pilot.pause(0.5)
+                await app.workers.wait_for_complete()
+                self.assertIn("[red]■", str(fast.content))
+                self.assertIn("[green]■", str(main.content))
 
     async def test_save_from_chat_returns_new_settings_for_reconnection(self):
         app = HistoryApp(parse_args([]))

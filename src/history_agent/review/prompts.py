@@ -3,10 +3,12 @@
 from history_agent.review.classification import REVIEW_CRITERIA
 
 BATCH_INSTRUCTION: str = (
-    "This is an isolated batch item. Investigate only its "
+    "This is an isolated batch item. Review only its "
     "assigned warning; no previous warning context exists. "
     "The host has fetched the current checker guide, warning, "
-    "trace, review and source below; reuse those reads. "
+    "trace, review and source below; reuse those reads. Follow the "
+    "session's required review pipeline before expanding the investigation "
+    "or submitting a verdict. "
     "Request further source/navigation through read tools as "
     "needed. Do not save reviews: the host handles saving. "
     "Finish by calling submit_verdict alone with classification "
@@ -34,9 +36,19 @@ BATCH_INSTRUCTION: str = (
     "for the same criterion. Checker-local pattern hints are "
     "hypotheses: verify every checklist condition against "
     "this warning's actual code/trace, and investigate normally "
-    "if anything differs. Skip redundant tool reads when "
+    "if anything differs. In the manual investigation branch, "
+    "skip redundant source reads when "
     "the prefetched guide, trace and source already prove every "
     "required condition."
+)
+
+SYSTEM_ONE_START: str = (
+    "First action: call ask_system_one with the prefetched code. "
+    "This step is mandatory before further investigation or a verdict. "
+    "If code is missing, fetch one minimal source window first. "
+    "The host supplies warning text and TP conditions. Use the result "
+    "to select the fast verdict path or focused investigation; "
+    "if the tool fails, continue manually.\n"
 )
 
 
@@ -72,6 +84,13 @@ RETRY: str = (
     "\nInvestigate again. Cite only exact source addresses returned by "
     "agent_source. Read any additional cited lines before submitting. "
     "Do not reuse the rejected verdict."
+)
+SCOPE_RETRY: str = (
+    "\nThe host automatically reloaded this warning after rejecting a read: "
+    "{error}\nCorrect the tool arguments and continue the investigation. "
+    "Assigned scope: {scope}\nAllowed snapshot IDs: {snapshots}. "
+    "Use these exact IDs; do not invent snapshots or leave this scope. "
+    "HEAD is allowed only for get_warning to read the current review."
 )
 PREFETCH_NOTICE: str = (
     "Review the single assigned warning using the fetched data below."

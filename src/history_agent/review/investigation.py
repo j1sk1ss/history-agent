@@ -10,7 +10,7 @@ from mcp import Client
 from history_agent.history.client import HistoryClient, HistoryError
 from history_agent.inference.model import ChatError, compact
 from history_agent.review import patterns, prompts
-from history_agent.review.client import ItemClient
+from history_agent.review.client import ItemClient, ReadScopeError
 from history_agent.review.journal import Journal
 from history_agent.review.models import ReviewVerdict
 from history_agent.review.response import VerdictResponse
@@ -49,20 +49,32 @@ class Investigation:
     async def run(self) -> ReviewVerdict:
         checker: dict[str, object] = await self.checker_documentation()
         self.allow_comparison_snapshots()
-        reviewer: Harness = self.reviewer_factory(self.client)
-        reviewer.reset()
-        reviewer.set_result_schema(ReviewVerdict.model_json_schema())
-        reviewer.messages[0]["content"] += " " + prompts.BATCH_INSTRUCTION
-        reviewer.messages.append(
-            {
-                "role": "user",
-                "content": prompts.PREFETCH_NOTICE,
-            }
-        )
-        await self.prefetch(reviewer, checker)
+        reviewer: Harness = await self.prepare_reviewer(checker)
         pending: dict[str, object] | None = self.pending_response()
         prompt: str = self.build_prompt(pending)
-        raw: str = await self.obtain_response(reviewer, prompt, pending)
+        for attempt in range(3):
+            try:
+                raw: str = await self.obtain_response(
+                    reviewer, prompt, pending
+                )
+                break
+            except ReadScopeError as error:
+                if attempt == 2:
+                    raise
+                feedback = prompts.SCOPE_RETRY.format(
+                    error=str(error),
+                    scope=compact(self.client.scope),
+                    snapshots=compact(sorted(self.client.snapshots)),
+                )
+                self.on_event(
+                    "notice", message=(
+                        f"Reloading warning {self.row.warning_id} "
+                        f"({attempt + 1}/2): {error}"
+                    ),
+                )
+                self.client.record.clear()
+                reviewer = await self.prepare_reviewer(checker)
+                prompt = self.build_prompt(pending) + feedback
         original_raw: str = (
             pending.get("original_raw", pending["raw"])
             if pending and not pending.get("retry_investigation")
@@ -77,6 +89,22 @@ class Investigation:
             self.on_event,
         )
         return await response.resolve(raw, original_raw)
+
+    async def prepare_reviewer(
+        self, checker: dict[str, object],
+    ) -> Harness:
+        reviewer: Harness = self.reviewer_factory(self.client)
+        reviewer.reset()
+        reviewer.set_result_schema(ReviewVerdict.model_json_schema())
+        reviewer.messages[0]["content"] += " " + prompts.BATCH_INSTRUCTION
+        reviewer.messages.append(
+            {
+                "role": "user",
+                "content": prompts.PREFETCH_NOTICE,
+            }
+        )
+        await self.prefetch(reviewer, checker)
+        return reviewer
 
     async def checker_documentation(self) -> dict[str, object]:
         cached: dict[str, object] | None = self.job.cached_checker(
@@ -257,6 +285,8 @@ class Investigation:
         pending: dict[str, object] | None,
     ) -> str:
         if not pending or pending.get("retry_investigation"):
+            if "ask_system_one" in reviewer.allowed:
+                prompt = prompts.SYSTEM_ONE_START + prompt
             return await reviewer.ask(prompt)
         self.client.record.update(
             tuple(address) for address in pending["evidence"]

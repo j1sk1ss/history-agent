@@ -220,12 +220,13 @@ class SystemOne:
 ADVISER: Tool = Tool(
     name="ask_system_one",
     description=(
-        "Ask the configured System 1 model for an initial warning "
-        "classification immediately, before manual investigation. "
-        "The host loads warning/checker metadata itself. "
-        "Returns confidence in [0,1]. At >= 0.8, "
-        "you may submit immediately if you agree; otherwise use the "
-        "recommendation as a hypothesis and investigate further."
+        "REQUIRED first analysis step for every warning, including obvious "
+        "cases. Call directly with available code BEFORE further "
+        "investigation "
+        "or a verdict; the host supplies warning text and TP conditions. "
+        "At confidence >= 0.8 with can_skip_investigation=true, submit "
+        "immediately unless evidence contradicts the result. Otherwise "
+        "use the recommendation to focus further investigation."
     ),
     input_schema={
         "type": "object",

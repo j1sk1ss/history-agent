@@ -106,6 +106,7 @@ class NoRedirects(urllib.request.HTTPRedirectHandler):
 
 def discover_model(
     base: str, key_env: str, api: str = "chat-completions",
+    *, timeout: float = 15,
 ) -> str:
     headers: dict[str, str] = {"Accept": "application/json"}
     key: str | None = os.environ.get(key_env)
@@ -122,7 +123,7 @@ def discover_model(
         opener: urllib.request.OpenerDirector = urllib.request.build_opener(
             NoRedirects()
         )
-        with opener.open(request, timeout=15) as response:
+        with opener.open(request, timeout=timeout) as response:
             raw: bytes = response.read(1024 * 1024 + 1)
         if len(raw) > 1024 * 1024:
             raise ValueError()

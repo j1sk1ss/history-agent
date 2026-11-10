@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from argparse import Namespace
 from copy import copy
 from pathlib import Path
@@ -11,6 +12,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, VerticalScroll
 from textual.dom import DOMNode
 from textual.screen import ModalScreen
+from textual.timer import Timer
 from textual.widgets import (
     Button,
     Checkbox,
@@ -33,6 +35,10 @@ from history_agent.configuration.defaults import (
     save_defaults,
     validate_defaults,
 )
+from history_agent.configuration.probes import (
+    probe_model_connection,
+    probe_system_one_connection,
+)
 from history_agent.history.client import Settings
 from history_agent.ui.settings_help import SETTINGS_HELP
 
@@ -49,6 +55,8 @@ class ConfigurationScreen(ModalScreen):
     def __init__(self, args: Namespace) -> None:
         super().__init__()
         self.args: Namespace = args
+        self.connection_revision: int = 0
+        self.connection_timer: Timer | None = None
 
     def compose(self) -> ComposeResult:
         history: Settings = Settings.from_env()
@@ -57,6 +65,12 @@ class ConfigurationScreen(ModalScreen):
             yield Static(
                 "Connect a model and a code history server.", classes="muted"
             )
+            with Horizontal(id="connection-status"):
+                yield Static("[dim]■ Model: checking…[/]", id="model-status")
+                yield Static(
+                    "[dim]■ System 1: checking…[/]", id="system-one-status"
+                )
+                yield Button("Check", id="check-connections")
             yield Label("Provider")
             yield Select(
                 [(name, name) for name in PROVIDERS],
@@ -136,6 +150,7 @@ class ConfigurationScreen(ModalScreen):
                 label.tooltip = SETTINGS_HELP.get(siblings[index].id)
         self.update_placeholders()
         self.query_one("#model_url", Input).focus()
+        self.schedule_connection_check()
 
     def update_placeholders(self) -> None:
         provider: str | NoSelection = self.query_one("#provider", Select).value
@@ -153,6 +168,67 @@ class ConfigurationScreen(ModalScreen):
     @on(Select.Changed, "#provider")
     def provider_changed(self) -> None:
         self.update_placeholders()
+        self.schedule_connection_check()
+
+    @on(Input.Changed)
+    def connection_changed(self, event: Input.Changed) -> None:
+        if event.input.id in (
+            "model_url", "model", "model_key_env",
+            "system_one_url", "system_one_model",
+        ):
+            self.schedule_connection_check()
+
+    def schedule_connection_check(self) -> None:
+        if not self.is_mounted:
+            return
+        self.connection_revision += 1
+        if self.connection_timer:
+            self.connection_timer.stop()
+        for name, label in (("model", "Model"), ("system-one", "System 1")):
+            self.query_one("#" + name + "-status", Static).update(
+                f"[dim]■ {label}: checking…[/]"
+            )
+        self.connection_timer = self.set_timer(
+            0.4, self.start_connection_check
+        )
+
+    @on(Button.Pressed, "#check-connections")
+    def start_connection_check(self) -> None:
+        if self.connection_timer:
+            self.connection_timer.stop()
+        self.run_worker(
+            self.check_connections(), group="connections", exclusive=True,
+            exit_on_error=False,
+        )
+
+    async def check_connections(self) -> None:
+        revision = self.connection_revision
+        args = copy(self.args)
+        args.provider = self.query_one("#provider", Select).value
+        for name in (
+            "model_url", "model", "model_key_env",
+            "system_one_url", "system_one_model",
+        ):
+            setattr(
+                args, name,
+                self.query_one("#" + name, Input).value.strip() or None,
+            )
+        results = await asyncio.gather(
+            asyncio.to_thread(probe_model_connection, args),
+            asyncio.to_thread(probe_system_one_connection, args),
+        )
+        if not self.is_mounted or revision != self.connection_revision:
+            return
+        for (name, label), (connected, detail) in zip(
+            (("model", "Model"), ("system-one", "System 1")), results,
+        ):
+            color = "green" if connected else "red"
+            state = "connected" if connected else "unavailable"
+            if name == "system-one" and not args.system_one_model:
+                state = "disabled"
+            widget = self.query_one("#" + name + "-status", Static)
+            widget.update(f"[{color}]■[/] {label}: {state}")
+            widget.tooltip = detail
 
     @on(Button.Pressed, "#save")
     def save(self) -> None:

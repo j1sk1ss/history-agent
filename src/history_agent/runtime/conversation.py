@@ -138,6 +138,8 @@ class Conversation:
                     f"{data['checker']} {data['warning_id']}",
                     file=sys.stderr,
                 )
+        elif kind == "notice":
+            print(data["message"], file=sys.stderr)
 
     async def perform(self, operation: Coroutine[None, None, None]) -> None:
         if self.ui and getattr(self.ui, "async_prompt", False):

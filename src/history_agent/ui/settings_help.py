@@ -1,6 +1,10 @@
 """Hover descriptions for the connection and review settings."""
 
 SETTINGS_HELP: dict[str, str] = {
+    "check-connections": (
+        "Send short test requests to the configured main and System 1 "
+        "models. Green square: connected; red square: unavailable or disabled."
+    ),
     "system_one_url": "Full System 1 API URL, including /v1/systemone.",
     "system_one_model": (
         "Optional adviser, enabled only after a successful API probe. "

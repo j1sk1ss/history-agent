@@ -141,6 +141,86 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
         server.guide_html = HTML
         return server
 
+    async def test_scope_error_auto_reloads_and_model_corrects_the_read(self):
+        class CorrectingModel(ReviewModel):
+            def complete(self, messages, tools, on_event=None):
+                verdict = super().complete(messages, tools, on_event)
+                if len(self.requests) == 1:
+                    return answer(calls=[call("history_read", {
+                        "action": "agent_source",
+                        "arguments": {
+                            "project_id": 0, "snapshot_id": "WRONG_SNAPSHOT",
+                            "file": "src/a1.c", "line": 3,
+                        },
+                    })])
+                if len(self.requests) == 2:
+                    self.corrected_prompt = messages[-1]["content"]
+                    return answer(calls=[call("history_read", {
+                        "action": "agent_source",
+                        "arguments": {
+                            "project_id": 0, "snapshot_id": "snapshot",
+                            "file": "src/a1.c", "line": 3,
+                        },
+                    })])
+                return verdict
+
+        with self.fixture() as server:
+            server.warnings = [warning("a1")]
+            history = HistoryClient(
+                Settings(server.url, "tester", "test-secret")
+            )
+            async with Client(create_server(history)) as client:
+                tools = (await client.list_tools()).tools
+                model = CorrectingModel()
+                events = []
+                runner = self.runner(
+                    history, client, tools, model, allow_write=True,
+                    on_event=lambda kind, **data: events.append((kind, data)),
+                )
+                result = await runner.run(SCOPE, write=True)
+        self.assertEqual(result["states"], {"saved": 1})
+        self.assertEqual(len(server.writes), 1)
+        self.assertEqual(len(model.requests), 3)
+        self.assertIn("automatically reloaded", model.corrected_prompt)
+        self.assertIn(
+            'Allowed snapshot IDs: ["snapshot"]', model.corrected_prompt
+        )
+        self.assertTrue(any(kind == "notice" for kind, _ in events))
+        self.assertFalse(any(
+            item["query"].get("snapshot_id") == "WRONG_SNAPSHOT"
+            for item in server.requests
+        ))
+
+    async def test_repeated_scope_errors_stop_after_two_auto_reloads(self):
+        class WrongModel(ReviewModel):
+            def complete(self, messages, tools, on_event=None):
+                super().complete(messages, tools, on_event)
+                return answer(calls=[call("history_read", {
+                    "action": "agent_source",
+                    "arguments": {
+                        **SCOPE, "snapshot_id": "WRONG_SNAPSHOT",
+                        "file": "src/a1.c", "line": 3,
+                    },
+                })])
+
+        with self.fixture() as server:
+            server.warnings = [warning("a1")]
+            history = HistoryClient(
+                Settings(server.url, "tester", "test-secret")
+            )
+            async with Client(create_server(history)) as client:
+                model = WrongModel()
+                runner = self.runner(
+                    history, client, (await client.list_tools()).tools, model,
+                    allow_write=True,
+                )
+                with self.assertRaisesRegex(
+                    ChatError, "outside the warning/trace"
+                ):
+                    await runner.run(SCOPE, write=True)
+        self.assertEqual(len(model.requests), 3)
+        self.assertFalse(server.writes)
+
     async def test_system_one_threshold_and_failure_fallback(self):
         class AdvisedModel(ReviewModel):
             def complete(self, messages, tools, on_event=None):

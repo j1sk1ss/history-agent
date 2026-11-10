@@ -15,6 +15,9 @@ ConfigurationScreen #settings-title {
     margin-bottom: 1;
 }
 ConfigurationScreen .muted { color: #888888; height: auto; }
+ConfigurationScreen #connection-status { height: 3; }
+ConfigurationScreen #connection-status Static { width: 1fr; padding-top: 1; }
+ConfigurationScreen #check-connections { width: 9; min-width: 9; }
 ConfigurationScreen Label { margin-top: 1; }
 ConfigurationScreen Input, ConfigurationScreen Select { margin: 0; }
 ConfigurationScreen Input { background: #191919; border: tall #333333; }

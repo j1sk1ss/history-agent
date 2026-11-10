@@ -107,7 +107,8 @@ class Harness:
                         "Finish the assigned warning investigation with "
                         "this structured verdict. This returns a proposal "
                         "to the host; it does not save a review. Call "
-                        "alone, after reading source evidence."
+                        "alone, after completing the required review pipeline "
+                        "and reading source evidence."
                     ),
                     "parameters": schema,
                 },

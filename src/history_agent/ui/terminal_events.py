@@ -31,12 +31,16 @@ class TerminalPresenter:
             "tool_start": self.handle_tool_start,
             "tool_end": self.handle_tool_end,
             "failure": self.handle_failure,
+            "notice": self.handle_notice,
         }
         handler: Callable[[str, dict[str, object]], None] | None = (
             handlers.get(kind)
         )
         if handler is not None:
             handler(kind, data)
+
+    def handle_notice(self, kind: str, data: dict[str, object]) -> None:
+        self.ui.append("tool", str(data["message"]) + "\n")
 
     def handle_batch_started(self, kind: str, data: dict[str, object]) -> None:
         self.ui.batch = {

@@ -11,6 +11,10 @@ from history_agent.inference.model import ChatError
 from history_agent.runtime.tools import ToolClient
 
 
+class ReadScopeError(ChatError):
+    """A rejected read that the reviewer can correct in a fresh attempt."""
+
+
 class ItemClient(ToolClient):
     """
     Scope batch reads and record actual source evidence without retaining
@@ -78,7 +82,7 @@ class ItemClient(ToolClient):
                     not isinstance(requested, str)
                     or requested.casefold() != assigned_checker.casefold()
                 ):
-                    raise ChatError(
+                    raise ReadScopeError(
                         "Batch checker documentation belongs to a "
                         "different item"
                     )
@@ -101,12 +105,12 @@ class ItemClient(ToolClient):
                 args.get("project_id", self.scope["project_id"])
                 != self.scope["project_id"]
             ):
-                raise ChatError("Batch read left the assigned project")
+                raise ReadScopeError("Batch read left the assigned project")
             if (
                 args.get("stream_id", self.scope["stream_id"])
                 != self.scope["stream_id"]
             ):
-                raise ChatError("Batch read left the assigned branch")
+                raise ReadScopeError("Batch read left the assigned branch")
             snapshot: str | None = args.get("snapshot_id")
             if (
                 snapshot
@@ -116,7 +120,7 @@ class ItemClient(ToolClient):
                     and arguments.get("action") == "get_warning"
                 )
             ):
-                raise ChatError(
+                raise ReadScopeError(
                     "Batch read used a snapshot outside the warning/trace"
                 )
         result: CallToolResult = await self.client.call_tool(name, arguments)
