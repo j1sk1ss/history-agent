@@ -46,6 +46,17 @@ SESSION_OPTIONS: tuple[tuple[tuple[str, ...], dict[str, object]], ...] = (
         },
     ),
     (
+        ("--system-one-url",),
+        {
+            "default": "http://aport:8000/v1/systemone",
+            "help": "System 1 endpoint (full URL)",
+        },
+    ),
+    (
+        ("--system-one-model",),
+        {"help": "System 1 adviser; confidence >= 0.8 allows a quick verdict"},
+    ),
+    (
         ("--history-url",),
         {
             "help": (

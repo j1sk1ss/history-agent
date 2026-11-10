@@ -20,6 +20,12 @@ from history_agent.review.batch import BatchRunner
 from history_agent.review.client import ItemClient
 from history_agent.review.journal import Journal
 from history_agent.review.router import BatchRouter
+from history_agent.review.system_one import (
+    SystemOne,
+    SystemOneClient,
+    load_warning_context,
+    warning_context,
+)
 from history_agent.runtime.agent import Harness
 from history_agent.runtime.prompts import BATCH_HINT
 from history_agent.ui.bridge import UIAdapter
@@ -61,6 +67,15 @@ class Conversation:
                 show_thoughts=True,
             )
         self.tools: list[Tool] = (await self.client.list_tools()).tools
+        self.system_one: SystemOne | None = None
+        if self.args.system_one_model:
+            adviser = SystemOne(
+                self.args.system_one_url,
+                self.args.system_one_model,
+                self.args.timeout,
+            )
+            if await asyncio.to_thread(adviser.probe):
+                self.system_one = adviser
         self.runner: BatchRunner = BatchRunner(
             self.history,
             self.client,
@@ -73,8 +88,9 @@ class Conversation:
             reuse_patterns=not self.args.no_patterns,
         )
         self.router: BatchRouter = BatchRouter(self.client, self.runner)
+        transport = SystemOneClient(self.router, self.system_one)
         self.harness: Harness = Harness(
-            self.router,
+            transport,
             self.model,
             self.tools,
             allow_write=self.args.allow_write,
@@ -84,12 +100,17 @@ class Conversation:
             stats=self.args.stats,
             on_event=self.ui.event if self.ui else None,
         )
+        transport.context = lambda: warning_context(self.harness.messages)
+        transport.load_context = lambda: load_warning_context(
+            self.router, self.harness.messages
+        )
         self.harness.messages[0]["content"] += BATCH_HINT
         self.retry: Callable[[], Coroutine[None, None, None]] | None = None
 
     def make_reviewer(self, item_client: ItemClient) -> Harness:
-        return Harness(
-            item_client,
+        transport = SystemOneClient(item_client, self.system_one)
+        reviewer = Harness(
+            transport,
             self.model,
             self.tools,
             allow_write=False,
@@ -99,6 +120,11 @@ class Conversation:
             stats=self.args.stats,
             on_event=self.ui.event if self.ui else None,
         )
+        transport.context = lambda: warning_context(reviewer.messages)
+        transport.load_context = lambda: load_warning_context(
+            item_client, reviewer.messages
+        )
+        return reviewer
 
     def batch_event(self, kind: str, **data: object) -> None:
         if self.ui:

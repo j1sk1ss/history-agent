@@ -100,6 +100,14 @@ class ConfigurationScreen(ModalScreen):
                 id="allow_write",
             )
             with Collapsible(title="Advanced", collapsed=True):
+                yield Label("System 1 URL")
+                yield Input(
+                    self.args.system_one_url or "", id="system_one_url"
+                )
+                yield Label("System 1 model (empty to disable)")
+                yield Input(
+                    self.args.system_one_model or "", id="system_one_model"
+                )
                 for name in LIMIT_FIELDS:
                     yield Label(name.replace("_", " ").capitalize())
                     yield Input(str(getattr(self.args, name)), id=name)
@@ -151,12 +159,17 @@ class ConfigurationScreen(ModalScreen):
         args: Namespace = copy(self.args)
         try:
             args.provider = self.query_one("#provider", Select).value
-            for name in ("model_url", "model", "history_url", "model_key_env"):
+            for name in (
+                "model_url", "model", "history_url", "model_key_env",
+                "system_one_url", "system_one_model",
+            ):
                 setattr(
                     args,
                     name,
                     self.query_one("#" + name, Input).value.strip() or None,
                 )
+            if args.system_one_model and not args.system_one_url:
+                raise ValueError("Enter a System 1 URL")
             args.history_user = self.query_one(
                 "#history_user", Input
             ).value.strip()

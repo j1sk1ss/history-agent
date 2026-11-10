@@ -61,7 +61,35 @@ class Harness:
         self.stats: bool
         self.max_tool_result_bytes, self.stats = max_tool_result_bytes, stats
         self.result_tool: str | None = None
+        self.client_tool_names: set[str] = set()
+        self.client_instructions: str = ""
         self.reset()
+
+    def sync_client_tools(self) -> None:
+        if not isinstance(self.client, ToolClient):
+            return
+        self.tools = [
+            tool for tool in self.tools
+            if tool["function"]["name"] not in self.client_tool_names
+        ]
+        self.allowed.difference_update(self.client_tool_names)
+        extra: list[Tool] = self.client.local_tools()
+        self.client_tool_names = {tool.name for tool in extra}
+        self.tools.extend({
+            "type": "function",
+            "function": {
+                "name": tool.name, "description": tool.description,
+                "parameters": tool.input_schema,
+            },
+        } for tool in extra)
+        self.allowed.update(self.client_tool_names)
+        content: str = self.messages[0]["content"]
+        if self.client_instructions:
+            content = content.replace(" " + self.client_instructions, "", 1)
+        self.client_instructions = self.client.prompt_instructions()
+        if self.client_instructions:
+            content += " " + self.client_instructions
+        self.messages[0]["content"] = content
 
     def set_result_schema(self, schema: dict[str, object]) -> None:
         self.result_tool = FINAL_TOOL
@@ -96,6 +124,7 @@ class Harness:
         self.messages: list[dict[str, object]] = [
             {"role": "system", "content": SYSTEM + " " + mode}
         ]
+        self.sync_client_tools()
         self.blocked: bool = False
 
     def context_bytes(self) -> int:
@@ -225,6 +254,8 @@ class Harness:
         raise ChatError("Model step limit reached")
 
     async def request(self, step: int) -> dict[str, object]:
+        if self.allowed:
+            self.sync_client_tools()
         size: int = self.context_bytes()
         if size > self.max_context_bytes:
             raise ChatError(

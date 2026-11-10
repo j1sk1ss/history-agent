@@ -1,6 +1,13 @@
 """Hover descriptions for the connection and review settings."""
 
 SETTINGS_HELP: dict[str, str] = {
+    "system_one_url": "Full System 1 API URL, including /v1/systemone.",
+    "system_one_model": (
+        "Optional adviser, enabled only after a successful API probe. "
+        "The agent asks it first: confidence >= 0.8 allows an immediate "
+        "verdict if the agent agrees; lower scores guide investigation. "
+        "Leave empty to disable."
+    ),
     "provider": (
         "The model API protocol. For Qwen served by vLLM or LM Studio, "
         "choose openai-compatible; for llama-server, choose llama; "

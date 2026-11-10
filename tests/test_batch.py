@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from mcp import Client
 
@@ -21,8 +22,13 @@ from history_agent.review.constants import BATCH_ACTION
 from history_agent.review.journal import Journal
 from history_agent.review.requests import BatchCommand
 from history_agent.review.router import BatchRouter
+from history_agent.review.system_one import (
+    SystemOne,
+    SystemOneClient,
+    warning_context,
+)
 from tests.fake_history import FakeHistory
-from tests.test_chat import answer
+from tests.test_chat import answer, call
 from tests.test_streaming import (
     USAGE,
     StreamingServer,
@@ -107,14 +113,19 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
         asyncio.get_running_loop().slow_callback_duration = 5
 
     def runner(self, history, client, tools, model, **kwargs):
+        system_one = kwargs.pop("system_one", None)
+
         def factory(item_client):
-            return Harness(
-                item_client,
+            transport = SystemOneClient(item_client, system_one)
+            reviewer = Harness(
+                transport,
                 model,
                 tools,
                 max_steps=4,
                 on_event=lambda *args, **kwargs: None,
             )
+            transport.context = lambda: warning_context(reviewer.messages)
+            return reviewer
 
         return BatchRunner(
             history, client, factory, self.root, MODEL, **kwargs
@@ -129,6 +140,86 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
         ]
         server.guide_html = HTML
         return server
+
+    async def test_system_one_threshold_and_failure_fallback(self):
+        class AdvisedModel(ReviewModel):
+            def complete(self, messages, tools, on_event=None):
+                if messages[-1]["role"] == "user":
+                    self.requests.append(copy.deepcopy({
+                        "messages": messages, "tools": tools,
+                    }))
+                    return answer(calls=[call(
+                        "ask_system_one", {
+                            "code": "int value = 42;",
+                            "environment": "C; synthetic test program",
+                        }
+                    )])
+                advice = json.loads(messages[-1]["content"])
+                if advice.get("can_skip_investigation"):
+                    self.verdict = {
+                        "classification": advice["classification"],
+                        "comment": "Agree with adviser: src/a1.c:3",
+                        "evidence": [{
+                            "file": "src/a1.c", "line": 3,
+                            "snapshot_id": "snapshot",
+                        }],
+                    }
+                return super().complete(messages, tools, on_event)
+
+        for confidence in (0.8, 0.79, 0.95, 80, 79, "invalid", None):
+            with self.subTest(confidence=confidence), self.fixture() as server:
+                server.warnings = [warning("a1")]
+                history = HistoryClient(
+                    Settings(server.url, "tester", "test-secret")
+                )
+                async with Client(create_server(history)) as client:
+                    tools = (await client.list_tools()).tools
+                    model = AdvisedModel()
+                    adviser = SystemOne("http://systemone", "fast", 1)
+                    adviser.available = True
+                    runner = self.runner(
+                        history, client, tools, model, allow_write=True,
+                        system_one=adviser,
+                    )
+                    with patch(
+                        "history_agent.review.system_one._request"
+                    ) as request, patch(
+                        "history_agent.review.system_one._records",
+                        side_effect=lambda *_: iter([{
+                            "answers": {"sentiment": {
+                                "choice": "FP", "confidence": confidence,
+                            }}
+                        }]),
+                    ):
+                        if confidence is None:
+                            request.side_effect = OSError("unavailable")
+                        result = await runner.run(SCOPE, write=True)
+                    self.assertEqual(result["states"], {"saved": 1})
+                    self.assertEqual(len(model.requests), 2)
+                    high = confidence in (0.8, 0.95, 80)
+                    self.assertEqual(
+                        result["classifications"],
+                        {"FP" if high else "TP": 1},
+                    )
+                    response = model.requests[1]["messages"][-1]
+                    data = json.loads(response["content"])
+                    if confidence in (0.79, 79):
+                        self.assertEqual(data["classification"], "FP")
+                        self.assertEqual(data["confidence"], 0.79)
+                    payload = request.call_args.args[2] if confidence else {}
+                    if payload:
+                        self.assertIn("UNIQUE_A_RULE", payload["state"])
+                        state = json.loads(payload["state"])
+                        self.assertEqual(set(state), {
+                            "code", "environment", "warning_description",
+                            "tp_conditions",
+                        })
+                        self.assertEqual(
+                            state["warning_description"],
+                            "A_CHECKER: Synthetic finding a1",
+                        )
+                        self.assertNotIn("snapshot", payload["state"])
+                        self.assertNotIn("project_id", payload["state"])
 
     async def test_session_save_mode_applies_to_history_read_in_real_time(
         self,
@@ -755,6 +846,7 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
             ]
             env = {
                 **os.environ,
+                "HISTORY_AGENT_CONFIG": str(self.root / "chat-config.json"),
                 "HISTORY_CONFIG": "",
                 "HISTORY_USER": "tester",
                 "HISTORY_PASSWORD": "test-secret",
@@ -813,6 +905,7 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
             server.warnings = [warning("a1")]
             env = {
                 **os.environ,
+                "HISTORY_AGENT_CONFIG": str(self.root / "chat-config.json"),
                 "HISTORY_CONFIG": "",
                 "HISTORY_USER": "tester",
                 "HISTORY_PASSWORD": "test-secret",

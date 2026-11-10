@@ -37,6 +37,8 @@ TEXT_FIELDS: tuple[str, ...] = (
     "model_url",
     "model",
     "model_key_env",
+    "system_one_url",
+    "system_one_model",
     "history_url",
     "history_user",
     "history_password",
@@ -98,7 +100,7 @@ def validate_defaults(
     provider: str = values.get("provider", "openai-compatible")
     if provider not in PROVIDERS:
         raise ValueError("Unknown model provider")
-    for name in ("model_url", "history_url"):
+    for name in ("model_url", "history_url", "system_one_url"):
         if values.get(name):
             valid_url(values[name])
     if values.get("model_key_env") and not re.fullmatch(
