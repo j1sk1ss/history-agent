@@ -25,6 +25,7 @@ from history_agent.review.router import BatchRouter
 from history_agent.review.system_one import (
     SystemOne,
     SystemOneClient,
+    load_warning_context,
     warning_context,
 )
 from tests.fake_history import FakeHistory
@@ -125,6 +126,9 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
                 on_event=lambda *args, **kwargs: None,
             )
             transport.context = lambda: warning_context(reviewer.messages)
+            transport.load_context = lambda: load_warning_context(
+                item_client, reviewer.messages
+            )
             return reviewer
 
         return BatchRunner(
@@ -246,7 +250,7 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
                     }
                 return super().complete(messages, tools, on_event)
 
-        for confidence in (0.8, 0.79, 0.95, 80, 79, "invalid", None):
+        for confidence in (0.8, 0.79, 0.95, 80, 79, 69, "invalid", None):
             with self.subTest(confidence=confidence), self.fixture() as server:
                 server.warnings = [warning("a1")]
                 history = HistoryClient(
@@ -276,16 +280,16 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
                         result = await runner.run(SCOPE, write=True)
                     self.assertEqual(result["states"], {"saved": 1})
                     self.assertEqual(len(model.requests), 2)
-                    high = confidence in (0.8, 0.95, 80)
+                    high = confidence in (0.8, 0.79, 0.95, 80, 79, 0.7)
                     self.assertEqual(
                         result["classifications"],
                         {"FP" if high else "TP": 1},
                     )
                     response = model.requests[1]["messages"][-1]
                     data = json.loads(response["content"])
-                    if confidence in (0.79, 79):
+                    if confidence in (0.69, 69):
                         self.assertEqual(data["classification"], "FP")
-                        self.assertEqual(data["confidence"], 0.79)
+                        self.assertEqual(data["confidence"], 0.69)
                     payload = request.call_args.args[2] if confidence else {}
                     if payload:
                         self.assertIn("UNIQUE_A_RULE", payload["state"])
@@ -293,6 +297,7 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(set(state), {
                             "code", "environment", "warning_description",
                             "tp_conditions",
+                            "trace",
                         })
                         self.assertEqual(
                             state["warning_description"],

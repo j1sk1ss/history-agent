@@ -114,6 +114,7 @@ class SystemOneTest(unittest.IsolatedAsyncioTestCase):
         transport.context = lambda: {
             "warning_description": "Division by zero",
             "tp_conditions": "The divisor evaluates to zero",
+            "trace": [],
             "snapshot_id": "PRIVATE_SNAPSHOT",
             "review": "PRIVATE_REVIEW",
         }
@@ -135,6 +136,7 @@ class SystemOneTest(unittest.IsolatedAsyncioTestCase):
             "environment": "C; divisor is zero",
             "warning_description": "Division by zero",
             "tp_conditions": "The divisor evaluates to zero",
+            "trace": [],
         })
         self.assertEqual(
             payload["questions"]["sentiment"]["criteria"], CRITERIA
@@ -214,6 +216,8 @@ class SystemOneTest(unittest.IsolatedAsyncioTestCase):
                         "text": "TP if the divisor is zero",
                         "source_url": "PRIVATE_URL",
                     }}
+                elif action == "get_warning_trace_and_role":
+                    data = {"trace": []}
                 else:
                     raise AssertionError(action)
                 return CallToolResult(content=[TextContent(
@@ -254,7 +258,9 @@ class SystemOneTest(unittest.IsolatedAsyncioTestCase):
                     },
                 },
             )])
-        self.assertEqual(client.actions, ["get_warning", "agent_checker_info"])
+        self.assertEqual(client.actions, [
+            "get_warning", "agent_checker_info", "get_warning_trace_and_role",
+        ])
         self.assertEqual(len(model.requests), 2)
         state = json.loads(classify.call_args.args[0])
         self.assertEqual(
@@ -305,6 +311,6 @@ class SystemOneTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(result["classification"], "FP")
                     self.assertEqual(result["confidence"], normalized)
                     self.assertEqual(
-                        result["can_skip_investigation"], normalized >= 0.8
+                        result["can_skip_investigation"], normalized >= 0.7
                     )
                     json.dumps(result, allow_nan=False)

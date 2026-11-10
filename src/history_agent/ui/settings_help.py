@@ -8,7 +8,7 @@ SETTINGS_HELP: dict[str, str] = {
     "system_one_url": "Full System 1 API URL, including /v1/systemone.",
     "system_one_model": (
         "Optional adviser, enabled only after a successful API probe. "
-        "The agent asks it first: confidence >= 0.8 allows an immediate "
+        "The agent asks it first: confidence >= 0.7 allows an immediate "
         "verdict if the agent agrees; lower scores guide investigation. "
         "Leave empty to disable."
     ),

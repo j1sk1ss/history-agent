@@ -54,7 +54,7 @@ SESSION_OPTIONS: tuple[tuple[tuple[str, ...], dict[str, object]], ...] = (
     ),
     (
         ("--system-one-model",),
-        {"help": "System 1 adviser; confidence >= 0.8 allows a quick verdict"},
+        {"help": "System 1 adviser; confidence >= 0.7 allows a quick verdict"},
     ),
     (
         ("--history-url",),

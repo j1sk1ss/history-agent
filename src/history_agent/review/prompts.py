@@ -46,7 +46,8 @@ SYSTEM_ONE_START: str = (
     "First action: call ask_system_one with the prefetched code. "
     "This step is mandatory before further investigation or a verdict. "
     "If code is missing, fetch one minimal source window first. "
-    "The host supplies warning text and TP conditions. Use the result "
+    "The host supplies warning text, TP conditions, the trace and code "
+    "within 5 lines before/after every trace point. Use the result "
     "to select the fast verdict path or focused investigation; "
     "if the tool fails, continue manually.\n"
 )

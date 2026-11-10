@@ -51,6 +51,17 @@ class ItemClient(ToolClient):
                     overrides(entry)
 
         overrides(result)
+        if action in (
+            "get_warning", "get_warning_trace_and_role", "get_warning_trace",
+        ):
+            trace_data = result.get("warning", result)
+            if isinstance(trace_data, dict):
+                for key in ("trace", "traces"):
+                    if isinstance(trace_data.get(key), str):
+                        try:
+                            overrides(json.loads(trace_data[key]))
+                        except ValueError:
+                            pass
         if action == "agent_source" and isinstance(result, dict):
             for line in result.get("lines", []):
                 if isinstance(line, dict) and isinstance(
