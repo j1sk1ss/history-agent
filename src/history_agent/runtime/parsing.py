@@ -38,6 +38,8 @@ def parse_message(
             message["gemini_parts"] = raw["gemini_parts"]
         if isinstance(raw.get("responses_items"), list):
             message["responses_items"] = raw["responses_items"]
+        if isinstance(raw.get("anthropic_blocks"), list):
+            message["anthropic_blocks"] = raw["anthropic_blocks"]
         calls: list[dict[str, object]] = raw.get("tool_calls") or []
         if not isinstance(calls, list) or len(calls) > 8:
             raise ValueError()

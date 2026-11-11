@@ -13,8 +13,10 @@ from history_agent.inference.transport import _records, _request, result
 
 
 def anthropic(
-    model: Model, messages: list[dict[str, object]],
-    tools: list[dict[str, object]], emit: Callable[..., None],
+    model: Model,
+    messages: list[dict[str, object]],
+    tools: list[dict[str, object]],
+    emit: Callable[..., None],
 ) -> dict[str, object]:
     system: str
     converted: list[dict[str, object]]
@@ -105,16 +107,25 @@ class AnthropicState:
         if b.get("type") == "text" and b.get("text"):
             self.text.append(b["text"])
             self.emit("content", text=b["text"])
+        elif b.get("type") == "thinking" and b.get("thinking"):
+            self.thinking.append(b["thinking"])
+            self.emit("reasoning", text=b["thinking"])
 
     def on_content_block_delta(self, item: dict[str, object]) -> None:
         b = self.blocks.get(item["index"], {})
         delta: dict[str, object] = item.get("delta", {})
         if delta.get("type") == "text_delta" and delta.get("text"):
+            b["text"] = b.get("text", "") + delta["text"]
             self.text.append(delta["text"])
             self.emit("content", text=delta["text"])
         elif delta.get("type") == "thinking_delta" and delta.get("thinking"):
+            b["thinking"] = b.get("thinking", "") + delta["thinking"]
             self.thinking.append(delta["thinking"])
             self.emit("reasoning", text=delta["thinking"])
+        elif delta.get("type") == "signature_delta":
+            b["signature"] = b.get("signature", "") + delta.get(
+                "signature", ""
+            )
         elif delta.get("type") == "input_json_delta":
             b["json_fragments"] = b.get("json_fragments", "") + delta.get(
                 "partial_json", ""
@@ -133,15 +144,14 @@ class AnthropicState:
         self.stopped = True
         self.finish = item.get("stop_reason")
         self.usage.update(item.get("usage") or {})
-        for b in item.get("content", []):
+        for index, b in enumerate(item.get("content", [])):
+            self.blocks[index] = b.copy()
             if b.get("type") == "text":
                 self.text.append(b.get("text", ""))
                 self.emit("content", text=b.get("text", ""))
             elif b.get("type") == "thinking":
                 self.thinking.append(b.get("thinking", ""))
                 self.emit("reasoning", text=b.get("thinking", ""))
-            elif b.get("type") == "tool_use":
-                self.calls.append((b["id"], b["name"], b.get("input", {})))
 
     def build_result(self) -> dict[str, object]:
         if not self.stopped:
@@ -151,17 +161,20 @@ class AnthropicState:
                     " executed"
                 )
             )
+        retained = []
         for idx in sorted(self.blocks):
-            b = self.blocks[idx]
+            b = self.blocks[idx].copy()
             if b.get("type") == "tool_use":
-                arg: str | None = b.get("json_fragments")
+                arg: str | None = b.pop("json_fragments", None)
+                b["input"] = json.loads(arg) if arg else b.get("input", {})
                 self.calls.append(
                     (
                         b["id"],
                         b["name"],
-                        json.loads(arg) if arg else b.get("input", {}),
+                        b["input"],
                     )
                 )
+            retained.append(b)
         stop: str | None = {
             "end_turn": "stop",
             "stop_sequence": "stop",
@@ -178,10 +191,13 @@ class AnthropicState:
             },
         }
         self.emit("usage", usage=stats)
-        return result(
+        normalized = result(
             "".join(self.text),
             self.calls,
             stop,
             stats,
             reasoning="".join(self.thinking),
         )
+        if retained:
+            normalized["choices"][0]["message"]["anthropic_blocks"] = retained
+        return normalized

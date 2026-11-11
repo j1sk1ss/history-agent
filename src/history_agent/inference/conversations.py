@@ -8,7 +8,8 @@ from history_agent.inference.model import ChatError
 
 
 def api_messages(
-    messages: list[dict[str, object]], provider: str,
+    messages: list[dict[str, object]],
+    provider: str,
 ) -> tuple[str, list[dict[str, object]]]:
     """
     Convert the model-neutral conversation without dropping tool
@@ -26,6 +27,14 @@ def api_messages(
                 {"role": "user", "content": message.get("content") or ""}
             )
         elif role == "assistant":
+            if isinstance(message.get("anthropic_blocks"), list):
+                out.append(
+                    {
+                        "role": "assistant",
+                        "content": message["anthropic_blocks"],
+                    }
+                )
+                continue
             blocks: list[dict[str, object]] = []
             if message.get("content"):
                 blocks.append({"type": "text", "text": message["content"]})
