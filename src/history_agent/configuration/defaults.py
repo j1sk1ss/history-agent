@@ -33,6 +33,7 @@ PROVIDER_KEYS: dict[str, str] = {
 PROVIDERS: tuple[str, ...] = ("openai-compatible", *PROVIDER_DEFAULTS)
 LOCAL_PROVIDERS: tuple[str, ...] = ("openai-compatible", "ollama", "llama")
 TEXT_FIELDS: tuple[str, ...] = (
+    "prompts_file",
     "provider",
     "model_url",
     "model",
@@ -135,7 +136,7 @@ def load_defaults() -> dict[str, str | bool | int | float | None]:
 def save_defaults(args: Namespace) -> None:
     # Commands, prompts, UI flags and job scope are never persisted.
     values: dict[str, str | bool | int | float | None] = validate_defaults(
-        {name: getattr(args, name) for name in SAVED_FIELDS}
+        {name: getattr(args, name, None) for name in SAVED_FIELDS}
     )
     path: Path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)

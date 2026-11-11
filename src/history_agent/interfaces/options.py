@@ -7,6 +7,10 @@ from history_agent.configuration.defaults import PROVIDERS
 
 SESSION_OPTIONS: tuple[tuple[tuple[str, ...], dict[str, object]], ...] = (
     (
+        ("--prompts-file",),
+        {"help": "JSON overrides for the central prompt catalog"},
+    ),
+    (
         ("--configure",),
         {
             "action": "store_true",

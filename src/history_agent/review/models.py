@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 from pydantic import Field, field_validator
 
 from history_agent.contracts import StrictModel
-from history_agent.review.classification import REVIEW_CRITERIA
+from history_agent.prompts import Prompts
 
 
 class SourceEvidence(StrictModel):
@@ -32,7 +32,9 @@ class ReviewPattern(StrictModel):
 
 class ReviewVerdict(StrictModel):
     classification: Literal["TP", "FP", "WF", "UC", "UD"] = Field(
-        description=REVIEW_CRITERIA
+        json_schema_extra=lambda schema: schema.update(
+            description=Prompts.get("review.criteria")
+        )
     )
     comment: str = Field(min_length=1, max_length=8000)
     evidence: list[SourceEvidence] = Field(max_length=20)

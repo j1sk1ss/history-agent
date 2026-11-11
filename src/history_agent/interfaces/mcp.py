@@ -11,7 +11,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 from history_agent.history.client import HistoryClient, HistoryError, Settings
-from history_agent.interfaces.prompts import INSTRUCTIONS
+from history_agent.prompts import Prompts
 from history_agent.skills.catalog import catalog as skill_catalog
 from history_agent.skills.catalog import read_skill
 
@@ -37,7 +37,9 @@ class HistoryTools:
         self.client: HistoryClient = client
 
     def execute(
-        self, operation: Callable[..., dict[str, object]], *args: object,
+        self,
+        operation: Callable[..., dict[str, object]],
+        *args: object,
         **kwargs: object,
     ) -> dict[str, object]:
         try:
@@ -64,7 +66,9 @@ class HistoryTools:
         return self.execute(self.client.discover, action)
 
     def history_read(
-        self, action: str, arguments: dict[str, object],
+        self,
+        action: str,
+        arguments: dict[str, object],
     ) -> dict[str, object]:
         """
         Read warnings, traces, source or DXR. Get the action's schema with
@@ -73,7 +77,9 @@ class HistoryTools:
         return self.execute(self.client.execute, action, arguments)
 
     def history_current(
-        self, project_id: int | None = None, project_name: str | None = None,
+        self,
+        project_id: int | None = None,
+        project_name: str | None = None,
         stream_id: str | None = None,
     ) -> dict[str, object]:
         """
@@ -92,7 +98,9 @@ class HistoryTools:
         return self.execute(self.client.execute, "current", args)
 
     def history_write(
-        self, action: str, arguments: dict[str, object],
+        self,
+        action: str,
+        arguments: dict[str, object],
     ) -> dict[str, object]:
         """
         Save an authorized warning review using agent_set_review; requires
@@ -110,26 +118,26 @@ def http_api_reference() -> str:
 
 
 def review_warning(
-    project_id: str, warning_id: str, branch: str = "master",
+    project_id: str,
+    warning_id: str,
+    branch: str = "master",
 ) -> str:
     """
     Investigate a warning with the shared history tools. Save a review
     only when authorized.
     """
-    return (
-        "Investigate warning "
-        f"{warning_id!r}"
-        " in project "
-        f"{project_id!r}"
-        ", branch "
-        f"{branch!r}"
-        ".\n\n"
+    return Prompts.get("interfaces.review_warning").format(
+        warning_id=repr(warning_id), project_id=repr(project_id),
+        branch=repr(branch),
     ) + workflow()
+
 
 
 def create_server(client: HistoryClient) -> MCPServer:
     server: MCPServer = MCPServer(
-        "history-agent", version="0.1.0", instructions=INSTRUCTIONS
+        "history-agent",
+        version="0.1.0",
+        instructions=Prompts.get("interfaces.instructions"),
     )
     tools: HistoryTools = HistoryTools(client)
     readonly: ToolAnnotations = ToolAnnotations(

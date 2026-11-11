@@ -16,6 +16,7 @@ from history_agent.history.client import HistoryClient, HistoryError
 from history_agent.history.constants import URL_ACTION
 from history_agent.history.links import find_history_urls
 from history_agent.inference.model import ChatError, Model, compact
+from history_agent.prompts import Prompts
 from history_agent.review.batch import BatchRunner
 from history_agent.review.client import ItemClient
 from history_agent.review.journal import Journal
@@ -27,26 +28,19 @@ from history_agent.review.system_one import (
     warning_context,
 )
 from history_agent.runtime.agent import Harness
-from history_agent.runtime.prompts import BATCH_HINT
+from history_agent.runtime.summary import ConversationSummary, pretty_json_text
 from history_agent.ui.bridge import UIAdapter
 from history_agent.ui.terminal import TerminalUI
 
 
-def pretty_json_text(value: str) -> str:
-    """
-    Pretty-print complete JSON on display; keep compact JSON inside model
-    context.
-    """
-    try:
-        return json.dumps(json.loads(value), ensure_ascii=False, indent=2)
-    except (ValueError, TypeError):
-        return value
-
-
-class Conversation:
+class Conversation(ConversationSummary):
     def __init__(
-        self, client: Client, model: Model, args: Namespace,
-        history: HistoryClient, ui: TerminalUI | UIAdapter | None,
+        self,
+        client: Client,
+        model: Model,
+        args: Namespace,
+        history: HistoryClient,
+        ui: TerminalUI | UIAdapter | None,
     ) -> None:
         self.client: Client = client
         self.model: Model = model
@@ -104,7 +98,9 @@ class Conversation:
         transport.load_context = lambda: load_warning_context(
             self.router, self.harness.messages
         )
-        self.harness.messages[0]["content"] += BATCH_HINT
+        self.harness.messages[0]["content"] += Prompts.get(
+            "runtime.batch_hint"
+        )
         self.retry: Callable[[], Coroutine[None, None, None]] | None = None
 
     def make_reviewer(self, item_client: ItemClient) -> Harness:
@@ -145,30 +141,6 @@ class Conversation:
         if self.ui and getattr(self.ui, "async_prompt", False):
             return await self.ui.execute(operation)
         return await operation
-
-    def retain_summary(self, summary: dict[str, object]) -> None:
-        self.harness.reset()
-        self.harness.messages[0]["content"] += BATCH_HINT
-        small: dict[str, object] = {
-            key: summary[key]
-            for key in (
-                "job_id",
-                "scope",
-                "write",
-                "total",
-                "states",
-                "classifications",
-            )
-        }
-        if summary.get("comparison"):
-            small["comparison"] = summary["comparison"]
-        self.harness.messages.append(
-            {
-                "role": "assistant",
-                "content": "Previous batch summary: " + compact(small),
-            }
-        )
-        self.router.completed = None
 
     async def respond(self, text: str) -> None:
         self.retry = partial(self.respond, text)
@@ -215,7 +187,9 @@ class Conversation:
                 self.ui.finish(result)
 
     async def run_batch(
-        self, arguments: dict[str, object], resume: bool = False,
+        self,
+        arguments: dict[str, object],
+        resume: bool = False,
     ) -> None:
         self.retry = partial(self.run_batch, dict(arguments), resume=resume)
         self.runner.last_job_id = None
@@ -289,7 +263,9 @@ class Conversation:
             self.retain_summary(self.runner.last_summary)
         else:
             self.harness.reset()
-            self.harness.messages[0]["content"] += BATCH_HINT
+            self.harness.messages[0]["content"] += Prompts.get(
+                "runtime.batch_hint"
+            )
         if self.ui:
             self.ui.reset()
         else:

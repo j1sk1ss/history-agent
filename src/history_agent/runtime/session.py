@@ -9,9 +9,9 @@ from mcp import Client
 
 from history_agent.history.client import HistoryClient, HistoryError
 from history_agent.inference.model import ChatError, Model
+from history_agent.prompts import Prompts
 from history_agent.runtime.commands import HELP, install_completion
 from history_agent.runtime.conversation import Conversation
-from history_agent.runtime.prompts import BATCH_HINT
 from history_agent.runtime.request_scope import (
     command_arguments,
     initial_arguments,
@@ -21,7 +21,11 @@ from history_agent.ui.terminal import TerminalUI
 
 
 async def converse(
-    client: Client, model: Model, args: Namespace, history: HistoryClient, *,
+    client: Client,
+    model: Model,
+    args: Namespace,
+    history: HistoryClient,
+    *,
     ui_override: TerminalUI | UIAdapter | None = None,
 ) -> None:
     session: Session = Session(client, model, args, history, ui_override)
@@ -30,8 +34,12 @@ async def converse(
 
 class Session:
     def __init__(
-        self, client: Client, model: Model, args: Namespace,
-        history: HistoryClient, ui: TerminalUI | UIAdapter | None,
+        self,
+        client: Client,
+        model: Model,
+        args: Namespace,
+        history: HistoryClient,
+        ui: TerminalUI | UIAdapter | None,
     ) -> None:
         self.conversation: Conversation = Conversation(
             client, model, args, history, ui
@@ -127,7 +135,9 @@ class Session:
             if self.conversation.retry is None:
                 raise ChatError("No request to reload yet")
             self.conversation.harness.reset()
-            self.conversation.harness.messages[0]["content"] += BATCH_HINT
+            self.conversation.harness.messages[0]["content"] += Prompts.get(
+                "runtime.batch_hint"
+            )
             self.conversation.router.completed = None
             await self.conversation.perform(self.conversation.retry())
             return

@@ -8,12 +8,12 @@ from collections.abc import Callable
 from pydantic import ValidationError
 
 from history_agent.inference.model import ChatError, compact
+from history_agent.prompts import Prompts
 from history_agent.review.classification import EVIDENCE_REQUIRED, STATUSES
 from history_agent.review.client import ItemClient
 from history_agent.review.comments import review_comment
 from history_agent.review.journal import Journal
 from history_agent.review.models import ReviewPattern, ReviewVerdict
-from history_agent.review.prompts import FORMAT_REPAIR
 from history_agent.review.storage.models import ReviewItem
 from history_agent.review.verdict import (
     VerdictFormatError,
@@ -25,7 +25,10 @@ from history_agent.runtime.agent import Harness
 
 class VerdictResponse:
     def __init__(
-        self, job: Journal, row: ReviewItem, baseline: dict[str, object],
+        self,
+        job: Journal,
+        row: ReviewItem,
+        baseline: dict[str, object],
         item_client: ItemClient,
         reviewer_factory: Callable[[ItemClient], Harness],
         on_event: Callable[..., None],
@@ -64,7 +67,10 @@ class VerdictResponse:
         return verdict
 
     def retain(
-        self, issues: list[str] | None = None, *, retry: bool = False,
+        self,
+        issues: list[str] | None = None,
+        *,
+        retry: bool = False,
     ) -> None:
         self.job.set(
             "pending_response",
@@ -122,7 +128,9 @@ class VerdictResponse:
         )
         formatter: Harness = self.reviewer_factory(self.client)
         formatter.tools, formatter.allowed = [], set()
-        formatter.messages = [{"role": "system", "content": FORMAT_REPAIR}]
+        formatter.messages = [
+            {"role": "system", "content": Prompts.get("review.format_repair")}
+        ]
         self.raw = await formatter.ask(
             compact(
                 {
@@ -152,7 +160,9 @@ class VerdictResponse:
         raise ChatError(message)
 
     def verify_repair(
-        self, previous: dict[str, object], verdict: ReviewVerdict,
+        self,
+        previous: dict[str, object],
+        verdict: ReviewVerdict,
     ) -> None:
         classification: object = previous.get("classification")
         if (

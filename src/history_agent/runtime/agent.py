@@ -10,21 +10,27 @@ from mcp import Client
 from mcp.types import Tool
 
 from history_agent.inference.model import ChatError, Model, compact
-from history_agent.review.verdict import FINAL_TOOL
+from history_agent.runtime.capabilities import HarnessCapabilities
 from history_agent.runtime.completion import complete_model
 from history_agent.runtime.execution import ToolExecutor
 from history_agent.runtime.messages import tool_exchange
 from history_agent.runtime.parsing import parse_message
-from history_agent.runtime.prompts import SYSTEM
 from history_agent.runtime.tools import ToolClient
 
 
-class Harness:
+class Harness(HarnessCapabilities):
     def __init__(
-        self, client: Client | ToolClient, model: Model, tools: list[Tool], *,
-        allow_write: bool = False, max_steps: int = 12,
-        max_context_bytes: int = 65536, max_tool_result_bytes: int = 16384,
-        stats: bool = False, on_event: Callable[..., None] | None = None,
+        self,
+        client: Client | ToolClient,
+        model: Model,
+        tools: list[Tool],
+        *,
+        allow_write: bool = False,
+        max_steps: int = 12,
+        max_context_bytes: int = 65536,
+        max_tool_result_bytes: int = 16384,
+        stats: bool = False,
+        on_event: Callable[..., None] | None = None,
     ) -> None:
         self.client: Client | ToolClient = client
         self.model: Model = model
@@ -65,76 +71,6 @@ class Harness:
         self.client_instructions: str = ""
         self.reset()
 
-    def sync_client_tools(self) -> None:
-        if not isinstance(self.client, ToolClient):
-            return
-        self.tools = [
-            tool for tool in self.tools
-            if tool["function"]["name"] not in self.client_tool_names
-        ]
-        self.allowed.difference_update(self.client_tool_names)
-        extra: list[Tool] = self.client.local_tools()
-        self.client_tool_names = {tool.name for tool in extra}
-        self.tools.extend({
-            "type": "function",
-            "function": {
-                "name": tool.name, "description": tool.description,
-                "parameters": tool.input_schema,
-            },
-        } for tool in extra)
-        self.allowed.update(self.client_tool_names)
-        content: str = self.messages[0]["content"]
-        if self.client_instructions:
-            content = content.replace(" " + self.client_instructions, "", 1)
-        self.client_instructions = self.client.prompt_instructions()
-        if self.client_instructions:
-            content += " " + self.client_instructions
-        self.messages[0]["content"] = content
-
-    def set_result_schema(self, schema: dict[str, object]) -> None:
-        self.result_tool = FINAL_TOOL
-        self.tools = [
-            tool
-            for tool in self.tools
-            if tool["function"]["name"] != FINAL_TOOL
-        ]
-        self.tools.append(
-            {
-                "type": "function",
-                "function": {
-                    "name": FINAL_TOOL,
-                    "description": (
-                        "Finish the assigned warning investigation with "
-                        "this structured verdict. This returns a proposal "
-                        "to the host; it does not save a review. Call "
-                        "alone, after completing the required review pipeline "
-                        "and reading source evidence."
-                    ),
-                    "parameters": schema,
-                },
-            }
-        )
-        self.allowed.add(FINAL_TOOL)
-
-    def reset(self) -> None:
-        mode: str = (
-            "Review writes are enabled, but require the user's request."
-            if self.allow_write
-            else "This session is read-only. Review writes are disabled."
-        )
-        self.messages: list[dict[str, object]] = [
-            {"role": "system", "content": SYSTEM + " " + mode}
-        ]
-        self.sync_client_tools()
-        self.blocked: bool = False
-
-    def context_bytes(self) -> int:
-        return len(
-            compact({"messages": self.messages, "tools": self.tools}).encode(
-                "utf-8"
-            )
-        )
-
     def emit(self, kind: str, **data: object) -> None:
         if self.on_event:
             self.on_event(kind, **data)
@@ -161,7 +97,11 @@ class Harness:
             )
 
     def report_usage(
-        self, result: dict[str, object], step: int, size: int, started: float,
+        self,
+        result: dict[str, object],
+        step: int,
+        size: int,
+        started: float,
     ) -> None:
         if not self.stats or self.on_event:
             return
@@ -276,7 +216,8 @@ class Harness:
         return result
 
     def final_answer(
-        self, message: dict[str, object],
+        self,
+        message: dict[str, object],
         calls: list[tuple[dict[str, object], dict[str, object]]],
     ) -> str | None:
         if not calls:

@@ -20,6 +20,7 @@ from history_agent.history.client import HistoryClient, Settings
 from history_agent.inference.model import ChatError, Model
 from history_agent.interfaces.arguments import parse_args
 from history_agent.interfaces.mcp import create_server
+from history_agent.prompts import Prompts
 from history_agent.runtime.session import converse
 
 
@@ -54,6 +55,7 @@ def history_settings(args: argparse.Namespace) -> Settings:
 async def run(
     args: argparse.Namespace,
 ) -> dict[str, argparse.Namespace | str | None] | str | None:
+    Prompts.configure(getattr(args, "prompts_file", None))
     url: str | None = args.model_url or PROVIDER_DEFAULTS.get(args.provider)
     if not url:
         raise ChatError(
