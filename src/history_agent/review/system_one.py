@@ -124,9 +124,15 @@ class SystemOneRequest(StrictModel):
     environment: str = ""
 
 
-ADVISER: Tool = ToolRegistry.create(
-    "ask_system_one", Prompts.get("tools.system_one"), SystemOneRequest
-)
+class SystemOneTools:
+    @staticmethod
+    def definition() -> Tool:
+        return ToolRegistry.create(
+            "ask_system_one", Prompts.get("tools.system_one"), SystemOneRequest
+        )
+
+
+ADVISER: Tool = SystemOneTools.definition()
 
 
 class SystemOneClient(ToolClient):
@@ -150,7 +156,7 @@ class SystemOneClient(ToolClient):
             else []
         )
         return inherited + (
-            [ADVISER]
+            [SystemOneTools.definition()]
             if (self.system_one and self.system_one.available)
             else []
         )
@@ -214,7 +220,7 @@ class SystemOneClient(ToolClient):
                     "warning_description": metadata.get("warning_description")
                     or "Assess the supplied code for a genuine defect.",
                     "tp_conditions": metadata.get("tp_conditions")
-                    or CRITERIA["TP"],
+                    or Prompts.get("system_one.tp"),
                     "trace": metadata.get("trace", []),
                 }
             )

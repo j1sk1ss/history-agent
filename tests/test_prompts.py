@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from history_agent.prompts import Prompts
+from history_agent.review.system_one import SystemOneTools
 from history_agent.runtime.agent import Harness
 from tests.test_chat import FakeModel
 from tests.test_system_one import TOOLS, LocalClient
@@ -35,9 +36,17 @@ class PromptTest(unittest.TestCase):
             "New review criteria", Prompts.get("review.batch_instruction")
         )
 
+    def test_adviser_schema_uses_current_overrides(self):
+        self.configure({"tools.system_one": "Custom adviser instructions"})
+        self.assertEqual(
+            SystemOneTools.definition().description,
+            "Custom adviser instructions",
+        )
+
     def test_invalid_overrides_are_rejected(self):
         for values in (
-            {"typo": "bad"}, {"runtime.system": ""},
+            {"typo": "bad"},
+            {"runtime.system": ""},
             {"review.investigation": "Missing scope"},
             {"runtime.system": "{$runtime.system}"},
         ):

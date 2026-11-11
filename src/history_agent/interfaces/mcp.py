@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from collections.abc import Callable
 from importlib.resources import files
 
@@ -126,11 +127,14 @@ def review_warning(
     Investigate a warning with the shared history tools. Save a review
     only when authorized.
     """
-    return Prompts.get("interfaces.review_warning").format(
-        warning_id=repr(warning_id), project_id=repr(project_id),
-        branch=repr(branch),
-    ) + workflow()
-
+    return (
+        Prompts.get("interfaces.review_warning").format(
+            warning_id=repr(warning_id),
+            project_id=repr(project_id),
+            branch=repr(branch),
+        )
+        + workflow()
+    )
 
 
 def create_server(client: HistoryClient) -> MCPServer:
@@ -175,12 +179,18 @@ def main() -> None:
         "--transport", choices=("stdio", "streamable-http"), default="stdio"
     )
     parser.add_argument(
+        "--prompts-file",
+        default=os.environ.get("HISTORY_AGENT_PROMPTS"),
+        help="JSON overrides for the shared prompt catalog",
+    )
+    parser.add_argument(
         "--port",
         type=int,
         default=8765,
         help="Local HTTP MCP port (default: 8765)",
     )
     options: argparse.Namespace = parser.parse_args()
+    Prompts.configure(options.prompts_file)
     server: MCPServer = create_server(HistoryClient(Settings.from_env()))
     if options.transport == "stdio":
         server.run()

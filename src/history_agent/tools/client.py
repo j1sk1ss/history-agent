@@ -49,7 +49,14 @@ class CapabilityClient(ToolClient):
         return tools
 
     def prompt_instructions(self):
-        return Prompts.get("tools.instructions")
+        inherited = (
+            self.client.prompt_instructions()
+            if isinstance(self.client, ToolClient)
+            else ""
+        )
+        return " ".join(
+            filter(None, (inherited, Prompts.get("tools.instructions")))
+        )
 
     async def call_tool(self, name: str, arguments: dict) -> CallToolResult:
         try:
