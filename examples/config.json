@@ -1,0 +1,53 @@
+{
+  "model_profile": "local/qwen-review",
+  "providers": {
+    "local": {
+      "transport": "openai-compatible",
+      "base_url": "http://127.0.0.1:8000/v1",
+      "api_key_env": "HISTORY_AGENT_MODEL_API_KEY",
+      "models": {
+        "qwen-review": {
+          "label": "Local reviewer",
+          "max_output_tokens": 4096,
+          "max_context_bytes": 131072,
+          "max_tool_result_bytes": 16384
+        }
+      }
+    },
+    "messages": {
+      "transport": "anthropic",
+      "base_url": "https://api.anthropic.com/v1",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "models": {
+        "your-anthropic-model": {}
+      }
+    }
+  },
+  "system_one_url": "http://127.0.0.1:8001/v1/systemone",
+  "system_one_model": "clef-flash",
+  "allow_write": false,
+  "capabilities": {
+    "questions": true,
+    "documentation": {
+      "enabled": true,
+      "api_key_env": "BRAVE_SEARCH_API_KEY",
+      "libraries": {
+        "requests": ["requests.readthedocs.io"],
+        "numpy": ["numpy.org"],
+        "boost": ["www.boost.org", "boost.org"]
+      }
+    },
+    "lsp": {
+      "enabled": false,
+      "timeout": 30,
+      "commands": {
+        "lua": ["lua-language-server"],
+        "c": ["clangd", "--background-index=false"],
+        "cpp": ["clangd", "--background-index=false"],
+        "python": ["pylsp"],
+        "java": ["jdtls"],
+        "javascript": ["typescript-language-server", "--stdio"]
+      }
+    }
+  }
+}
