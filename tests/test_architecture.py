@@ -21,6 +21,21 @@ def imports(path: Path) -> set[str]:
 
 
 class ArchitectureTest(unittest.TestCase):
+    def test_source_size_and_function_limits(self) -> None:
+        for path in PACKAGE.rglob("*.py"):
+            source = path.read_text(encoding="utf-8")
+            with self.subTest(module=str(path.relative_to(PACKAGE))):
+                self.assertLessEqual(len(source.splitlines()), 300)
+                for node in ast.walk(ast.parse(source)):
+                    if isinstance(
+                        node, (ast.FunctionDef, ast.AsyncFunctionDef)
+                    ):
+                        self.assertLessEqual(
+                            node.end_lineno - node.lineno + 1,
+                            100,
+                            f"{path}:{node.lineno} {node.name}",
+                        )
+
     def test_inference_adapters_do_not_import_application_layers(self) -> None:
         forbidden: tuple[str, ...] = tuple(
             "history_agent." + layer

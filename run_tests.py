@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -12,15 +13,18 @@ if __name__ == "__main__":
         if os.environ.get("PYTHONPATH")
         else ""
     )
-    unittest.main(
-        module=None,
-        argv=[
-            sys.argv[0],
-            "discover",
-            "-s",
-            str(root / "tests"),
-            "-t",
-            str(root),
-            *sys.argv[1:],
-        ],
-    )
+    with tempfile.TemporaryDirectory(prefix="history-test-config-") as config:
+        # Subprocess CLI tests must never load the developer's saved endpoints.
+        os.environ["HISTORY_AGENT_CONFIG"] = str(Path(config) / "config.json")
+        unittest.main(
+            module=None,
+            argv=[
+                sys.argv[0],
+                "discover",
+                "-s",
+                str(root / "tests"),
+                "-t",
+                str(root),
+                *sys.argv[1:],
+            ],
+        )
