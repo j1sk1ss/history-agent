@@ -18,7 +18,8 @@ from history_agent.interfaces.options import (
 
 
 def parse_args(
-    argv: list[str] | None = None, *,
+    argv: list[str] | None = None,
+    *,
     defaults: dict[str, str | bool | int | float | None] | None = None,
 ) -> argparse.Namespace:
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
@@ -31,7 +32,12 @@ def parse_args(
     )
     for flags, options in DISPLAY_OPTIONS:
         display.add_argument(*flags, **options)
-    parser.set_defaults(ui=None, history_user=None, history_password=None)
+    parser.set_defaults(
+        ui=None,
+        history_user=None,
+        history_password=None,
+        capabilities={},
+    )
     for flags, options in STREAM_OPTIONS:
         parser.add_argument(*flags, **options)
     job: argparse._MutuallyExclusiveGroup = (

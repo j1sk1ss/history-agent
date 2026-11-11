@@ -9,6 +9,7 @@ import re
 from argparse import Namespace
 from pathlib import Path
 
+from history_agent.configuration.capabilities import CapabilitySettings
 from history_agent.configuration.connection import valid_url
 from history_agent.configuration.files import private_write
 
@@ -59,7 +60,12 @@ LIMIT_FIELDS: tuple[str, ...] = (
     "max_tool_result_bytes",
     "timeout",
 )
-SAVED_FIELDS: tuple[str, ...] = (*TEXT_FIELDS, *BOOL_FIELDS, *LIMIT_FIELDS)
+SAVED_FIELDS: tuple[str, ...] = (
+    *TEXT_FIELDS,
+    *BOOL_FIELDS,
+    *LIMIT_FIELDS,
+    "capabilities",
+)
 
 
 def config_path() -> Path:
@@ -79,6 +85,8 @@ def validate_defaults(
         raise ValueError(
             "Expected chat settings; unknown configuration fields"
         )
+    if "capabilities" in values:
+        CapabilitySettings.model_validate(values["capabilities"])
     for name, value in values.items():
         if (
             name in TEXT_FIELDS

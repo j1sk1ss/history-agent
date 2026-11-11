@@ -66,6 +66,10 @@ class UIAdapter:
         self.event("input_ready")
         return await self.inputs.get()
 
+    async def ask_user(self, question: str, options: list[str]) -> str:
+        self.event("question", question=question, options=options)
+        return await self.inputs.get()
+
     async def execute(self, operation: Coroutine[None, None, None]) -> None:
         self.work = asyncio.create_task(operation)
         try:

@@ -12,6 +12,7 @@ from functools import partial
 from mcp import Client
 from mcp.types import Tool
 
+from history_agent.configuration.capabilities import CapabilitySettings
 from history_agent.history.client import HistoryClient, HistoryError
 from history_agent.history.constants import URL_ACTION
 from history_agent.history.links import find_history_urls
@@ -28,7 +29,9 @@ from history_agent.review.system_one import (
     warning_context,
 )
 from history_agent.runtime.agent import Harness
+from history_agent.runtime.interaction import UserInteraction
 from history_agent.runtime.summary import ConversationSummary, pretty_json_text
+from history_agent.tools.client import CapabilityClient
 from history_agent.ui.bridge import UIAdapter
 from history_agent.ui.terminal import TerminalUI
 
@@ -60,6 +63,9 @@ class Conversation(ConversationSummary):
                 allow_write=self.args.allow_write,
                 show_thoughts=True,
             )
+        self.capabilities = CapabilitySettings.model_validate(
+            getattr(self.args, "capabilities", {})
+        )
         self.tools: list[Tool] = (await self.client.list_tools()).tools
         self.system_one: SystemOne | None = None
         if self.args.system_one_model:
@@ -82,7 +88,9 @@ class Conversation(ConversationSummary):
             reuse_patterns=not self.args.no_patterns,
         )
         self.router: BatchRouter = BatchRouter(self.client, self.runner)
-        transport = SystemOneClient(self.router, self.system_one)
+        transport = SystemOneClient(
+            self.capability_client(self.router), self.system_one
+        )
         self.harness: Harness = Harness(
             transport,
             self.model,
@@ -103,8 +111,16 @@ class Conversation(ConversationSummary):
         )
         self.retry: Callable[[], Coroutine[None, None, None]] | None = None
 
+    def capability_client(self, client):
+        async def answer(question, options):
+            return await UserInteraction.answer(self.ui, question, options)
+
+        return CapabilityClient(client, self.capabilities, answer)
+
     def make_reviewer(self, item_client: ItemClient) -> Harness:
-        transport = SystemOneClient(item_client, self.system_one)
+        transport = SystemOneClient(
+            self.capability_client(item_client), self.system_one
+        )
         reviewer = Harness(
             transport,
             self.model,

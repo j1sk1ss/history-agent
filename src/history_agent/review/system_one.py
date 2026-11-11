@@ -161,20 +161,23 @@ class SystemOneClient(ToolClient):
         ) = None
 
     def local_tools(self) -> list[Tool]:
-        return (
-            [ADVISER]
-            if (self.system_one and self.system_one.available)
-            else []
+        inherited = (
+            self.client.local_tools()
+            if isinstance(self.client, ToolClient) else []
         )
+        return inherited + ([ADVISER] if (
+            self.system_one and self.system_one.available
+        ) else [])
 
     def prompt_instructions(self) -> str:
-        return (
-            Prompts.get("runtime.system_one").format(
-                model=self.system_one.model
-            )
-            if (self.system_one and self.system_one.available)
-            else ""
+        inherited = (
+            self.client.prompt_instructions()
+            if isinstance(self.client, ToolClient) else ""
         )
+        advice = Prompts.get("runtime.system_one").format(
+            model=self.system_one.model
+        ) if self.system_one and self.system_one.available else ""
+        return " ".join(part for part in (inherited, advice) if part)
 
     async def call_tool(
         self,
@@ -193,7 +196,7 @@ class SystemOneClient(ToolClient):
             or not isinstance(environment, str)
         ):
             data = {"error": "Provide only code and environment as text."}
-        elif not self.local_tools():
+        elif not self.system_one or not self.system_one.available:
             data = {"error": "Adviser unavailable; investigate normally."}
         else:
             if self.load_context:

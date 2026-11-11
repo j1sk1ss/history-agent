@@ -34,6 +34,7 @@ class BackendPresenter:
         ] = {
             "begin": self.handle_begin,
             "input_ready": self.handle_input_ready,
+            "question": self.handle_question,
             "backend_done": self.handle_backend_done,
             "batch_started": self.handle_batch_started,
             "welcome": self.handle_welcome,
@@ -72,15 +73,34 @@ class BackendPresenter:
         await self.ui.add_card("You", data["text"], kind="user")
 
     async def handle_input_ready(
-        self, kind: str, data: dict[str, object],
+        self,
+        kind: str,
+        data: dict[str, object],
     ) -> None:
         self.ui.waiting, self.ui.busy = (True, False)
         self.ui.query_one(UnfinishedJobs).disabled = False
         self.ui.query_one(CommandInput).disabled = False
         self.ui.query_one(CommandInput).focus()
 
+    async def handle_question(
+        self, kind: str, data: dict[str, object]
+    ) -> None:
+        options = "\n".join(
+            f"{index}. {text}"
+            for index, text in enumerate(data.get("options", []), 1)
+        )
+        await self.ui.add_card(
+            "Agent question",
+            data["question"] + ("\n" + options if options else ""),
+        )
+        self.ui.waiting = True
+        self.ui.query_one(CommandInput).disabled = False
+        self.ui.query_one(CommandInput).focus()
+
     async def handle_backend_done(
-        self, kind: str, data: dict[str, object],
+        self,
+        kind: str,
+        data: dict[str, object],
     ) -> None:
         self.ui.backend_done, self.ui.busy = (True, False)
         self.ui.waiting = True
@@ -88,7 +108,9 @@ class BackendPresenter:
         self.ui.query_one(CommandInput).focus()
 
     async def handle_batch_started(
-        self, kind: str, data: dict[str, object],
+        self,
+        kind: str,
+        data: dict[str, object],
     ) -> None:
         self.ui.last_job_id = data["job_id"]
 
@@ -104,7 +126,9 @@ class BackendPresenter:
         )
 
     async def handle_request_start(
-        self, kind: str, data: dict[str, object],
+        self,
+        kind: str,
+        data: dict[str, object],
     ) -> None:
         self.ui.splitter.flush()
         await self.ui.flush_text()
@@ -121,7 +145,9 @@ class BackendPresenter:
             await self.ui.flush_text()
 
     async def handle_request_end(
-        self, kind: str, data: dict[str, object],
+        self,
+        kind: str,
+        data: dict[str, object],
     ) -> None:
         self.ui.splitter.flush()
         await self.ui.flush_text()
@@ -129,7 +155,9 @@ class BackendPresenter:
             card.active = False
 
     async def handle_tool_start(
-        self, kind: str, data: dict[str, object],
+        self,
+        kind: str,
+        data: dict[str, object],
     ) -> None:
         key: str = data.get("event_id", data["name"])
         card: DetailCard | None = await self.ui.add_card(
@@ -141,7 +169,9 @@ class BackendPresenter:
         self.ui.tool_cards[key] = card
 
     async def handle_tool_end(
-        self, kind: str, data: dict[str, object],
+        self,
+        kind: str,
+        data: dict[str, object],
     ) -> None:
         card = self.ui.tool_cards.get(data.get("event_id", data["name"]))
         if card:
@@ -156,7 +186,9 @@ class BackendPresenter:
             card.dirty = True
 
     async def handle_tool_result(
-        self, kind: str, data: dict[str, object],
+        self,
+        kind: str,
+        data: dict[str, object],
     ) -> None:
         card = self.ui.tool_cards.pop(data.get("event_id", ""), None)
         if card is None:
@@ -180,7 +212,9 @@ class BackendPresenter:
         )
 
     async def handle_batch_progress(
-        self, kind: str, data: dict[str, object],
+        self,
+        kind: str,
+        data: dict[str, object],
     ) -> None:
         await self.ui.add_card(
             data["checker"],
@@ -191,7 +225,9 @@ class BackendPresenter:
         )
 
     async def handle_batch_verdict(
-        self, kind: str, data: dict[str, object],
+        self,
+        kind: str,
+        data: dict[str, object],
     ) -> None:
         if self.ui.metrics.batch:
             self.ui.metrics.batch["done"] += 1
@@ -203,7 +239,9 @@ class BackendPresenter:
         )
 
     async def handle_batch_patterns(
-        self, kind: str, data: dict[str, object],
+        self,
+        kind: str,
+        data: dict[str, object],
     ) -> None:
         await self.ui.add_card(
             "Review patterns",
@@ -212,21 +250,27 @@ class BackendPresenter:
         )
 
     async def handle_batch_format_repair(
-        self, kind: str, data: dict[str, object],
+        self,
+        kind: str,
+        data: dict[str, object],
     ) -> None:
         await self.ui.add_card(
             "Format validation", "\n".join(data.get("issues", []))
         )
 
     async def handle_batch_summary(
-        self, kind: str, data: dict[str, object],
+        self,
+        kind: str,
+        data: dict[str, object],
     ) -> None:
         await self.ui.add_card(
             "Batch summary", pretty(data["text"]), kind="answer"
         )
 
     async def handle_history_link(
-        self, kind: str, data: dict[str, object],
+        self,
+        kind: str,
+        data: dict[str, object],
     ) -> None:
         await self.ui.add_card(
             "History URL resolved", pretty(data), kind="tool"
