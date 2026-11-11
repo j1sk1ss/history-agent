@@ -117,3 +117,8 @@ class ModelCatalog:
             ).items():
                 if field not in explicit:
                     setattr(args, field, value)
+            if (
+                args.provider not in ("openai-compatible", "ollama", "llama")
+                and "no_thinking" not in explicit
+            ):
+                args.no_thinking = False

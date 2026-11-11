@@ -92,10 +92,6 @@ def validate_defaults(
         CapabilitySettings.model_validate(values["capabilities"])
     if "providers" in values:
         ModelCatalog.validate(values["providers"])
-    if values.get("model_profile"):
-        ModelCatalog.select(
-            values.get("providers", {}), values["model_profile"]
-        )
     for name, value in values.items():
         if (
             name in TEXT_FIELDS
@@ -115,6 +111,10 @@ def validate_defaults(
                 or (name == "timeout" and not math.isfinite(value))
             ):
                 raise ValueError(f"{name} must be positive")
+    if values.get("model_profile"):
+        ModelCatalog.select(
+            values.get("providers", {}), values["model_profile"]
+        )
     provider: str = values.get("provider", "openai-compatible")
     if provider not in PROVIDERS:
         raise ValueError("Unknown model provider")

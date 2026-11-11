@@ -100,6 +100,21 @@ class ModelCatalogTest(unittest.TestCase):
                 {"providers": CATALOG, "model_profile": "missing/x"}
             )
 
+    def test_invalid_profile_type_is_a_configuration_error(self):
+        with self.assertRaises(ValueError):
+            validate_defaults({"providers": CATALOG, "model_profile": True})
+
+    def test_remote_profile_drops_implicit_local_template_option(self):
+        args = parse_args(
+            ["--model-profile", "messages/reviewer"],
+            defaults={
+                "provider": "llama",
+                "no_thinking": True,
+                "providers": CATALOG,
+            },
+        )
+        self.assertFalse(args.no_thinking)
+
     def test_choices_include_every_added_model(self):
         self.assertEqual(len(ModelCatalog.choices(CATALOG)), 3)
         self.assertIn(

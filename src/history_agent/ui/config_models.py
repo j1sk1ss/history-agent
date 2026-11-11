@@ -6,9 +6,9 @@ from textual import on
 from textual.containers import Horizontal, VerticalScroll
 from textual.message_pump import MessagePump
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, Select, Static
+from textual.widgets import Button, Checkbox, Input, Label, Select, Static
 
-from history_agent.configuration.defaults import PROVIDERS
+from history_agent.configuration.defaults import LOCAL_PROVIDERS, PROVIDERS
 from history_agent.configuration.models import ModelCatalog
 
 
@@ -32,6 +32,8 @@ class ModelPicker(MessagePump):
             return
         values = ModelCatalog.select(self.providers, event.value)
         self.query_one("#provider", Select).value = values.pop("provider")
+        if self.query_one("#provider", Select).value not in LOCAL_PROVIDERS:
+            self.query_one("#no_thinking", Checkbox).value = False
         for field, value in values.items():
             self.query_one("#" + field, Input).value = str(value or "")
         self.schedule_connection_check()
@@ -174,7 +176,7 @@ class ModelEditor(ModalScreen):
                 or None,
                 "models": {**previous, model: previous.get(model, {})},
             }
-            updated = {**self.providers, name: values}
+            updated = {**deepcopy(self.providers), name: values}
             if self.reference and self.reference != name + "/" + model:
                 old_provider, _, old_model = self.reference.partition("/")
                 updated[old_provider]["models"].pop(old_model, None)
