@@ -48,4 +48,9 @@ class QuestionTools:
             }
         if text.isdigit() and 1 <= int(text) <= len(request.options):
             text = request.options[int(text) - 1]
-        return {"status": "answered", "answer": text[:8000]}
+        encoded = text.encode("utf-8")
+        return {
+            "status": "answered",
+            "answer": encoded[:8000].decode("utf-8", errors="ignore"),
+            "truncated": len(encoded) > 8000,
+        }
