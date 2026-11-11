@@ -12,6 +12,7 @@ from pathlib import Path
 from history_agent.configuration.capabilities import CapabilitySettings
 from history_agent.configuration.connection import valid_url
 from history_agent.configuration.files import private_write
+from history_agent.configuration.models import ModelCatalog
 
 PROVIDER_DEFAULTS: dict[str, str] = {
     "ollama": "http://127.0.0.1:11434/v1",
@@ -35,6 +36,7 @@ PROVIDERS: tuple[str, ...] = ("openai-compatible", *PROVIDER_DEFAULTS)
 LOCAL_PROVIDERS: tuple[str, ...] = ("openai-compatible", "ollama", "llama")
 TEXT_FIELDS: tuple[str, ...] = (
     "prompts_file",
+    "model_profile",
     "provider",
     "model_url",
     "model",
@@ -65,6 +67,7 @@ SAVED_FIELDS: tuple[str, ...] = (
     *BOOL_FIELDS,
     *LIMIT_FIELDS,
     "capabilities",
+    "providers",
 )
 
 
@@ -87,6 +90,12 @@ def validate_defaults(
         )
     if "capabilities" in values:
         CapabilitySettings.model_validate(values["capabilities"])
+    if "providers" in values:
+        ModelCatalog.validate(values["providers"])
+    if values.get("model_profile"):
+        ModelCatalog.select(
+            values.get("providers", {}), values["model_profile"]
+        )
     for name, value in values.items():
         if (
             name in TEXT_FIELDS

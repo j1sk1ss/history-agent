@@ -6,6 +6,7 @@ from pathlib import Path
 from history_agent.configuration.defaults import PROVIDERS
 
 SESSION_OPTIONS: tuple[tuple[tuple[str, ...], dict[str, object]], ...] = (
+    (("--model-profile",), {"help": "Saved provider/model to use"}),
     (
         ("--prompts-file",),
         {"help": "JSON overrides for the central prompt catalog"},

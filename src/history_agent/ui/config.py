@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
 from argparse import Namespace
-from copy import copy
+from copy import copy, deepcopy
 from pathlib import Path
 
 from textual import on
@@ -22,28 +21,31 @@ from textual.widgets import (
     Select,
     Static,
 )
-from textual.widgets.select import NoSelection
 
 from history_agent.configuration.defaults import (
     BOOL_FIELDS,
     LIMIT_FIELDS,
     LOCAL_PROVIDERS,
-    PROVIDER_DEFAULTS,
-    PROVIDER_KEYS,
     PROVIDERS,
     SAVED_FIELDS,
     save_defaults,
     validate_defaults,
 )
 from history_agent.configuration.probes import (
-    probe_model_connection,
-    probe_system_one_connection,
+    probe_model_connection as probe_model_connection,
+)
+from history_agent.configuration.probes import (
+    probe_system_one_connection as probe_system_one_connection,
 )
 from history_agent.history.client import Settings
+from history_agent.prompts import Prompts
+from history_agent.ui.config_capabilities import CapabilityEditor
+from history_agent.ui.config_connections import ConnectionChecks
+from history_agent.ui.config_models import ModelPicker
 from history_agent.ui.settings_help import SETTINGS_HELP
 
 
-class ConfigurationScreen(ModalScreen):
+class ConfigurationScreen(ModelPicker, ConnectionChecks, ModalScreen):
     TITLE: str = "History settings"
     CSS_PATH: Path = Path(__file__).with_name("config.tcss")
     BINDINGS: list[tuple[str, ...]] = [
@@ -55,6 +57,8 @@ class ConfigurationScreen(ModalScreen):
     def __init__(self, args: Namespace) -> None:
         super().__init__()
         self.args: Namespace = args
+        self.providers = deepcopy(args.providers)
+        self.capabilities = deepcopy(args.capabilities)
         self.connection_revision: int = 0
         self.connection_timer: Timer | None = None
 
@@ -71,6 +75,7 @@ class ConfigurationScreen(ModalScreen):
                     "[dim]■ System 1: checking…[/]", id="system-one-status"
                 )
                 yield Button("Check", id="check-connections")
+            yield from self.model_picker()
             yield Label("Provider")
             yield Select(
                 [(name, name) for name in PROVIDERS],
@@ -113,32 +118,34 @@ class ConfigurationScreen(ModalScreen):
                 value=self.args.allow_write,
                 id="allow_write",
             )
-            with Collapsible(title="Advanced", collapsed=True):
-                yield Label("System 1 URL")
-                yield Input(
-                    self.args.system_one_url or "", id="system_one_url"
-                )
-                yield Label("System 1 model (empty to disable)")
-                yield Input(
-                    self.args.system_one_model or "", id="system_one_model"
-                )
-                for name in LIMIT_FIELDS:
-                    yield Label(name.replace("_", " ").capitalize())
-                    yield Input(str(getattr(self.args, name)), id=name)
-                for name, label in (
-                    ("no_thinking", "Disable thinking (Qwen / local models)"),
-                    ("no_stream", "Disable streaming"),
-                    ("no_stream_usage", "Disable streaming usage reporting"),
-                    ("stats", "Show detailed statistics"),
-                    ("no_patterns", "Disable reusable review checklists"),
-                ):
-                    yield Checkbox(
-                        label, value=getattr(self.args, name), id=name
-                    )
+            yield from self.advanced_fields()
             yield Static("", id="settings-error", markup=False)
             with Horizontal(id="settings-actions"):
                 yield Button("Save and start", variant="primary", id="save")
                 yield Button("Cancel", id="cancel")
+
+    def advanced_fields(self):
+        with Collapsible(title="Advanced", collapsed=True):
+            yield Label("Prompt overrides JSON file")
+            yield Input(self.args.prompts_file or "", id="prompts_file")
+            yield Button("Agent tool settings", id="tool-settings")
+            yield Label("System 1 URL")
+            yield Input(self.args.system_one_url or "", id="system_one_url")
+            yield Label("System 1 model (empty to disable)")
+            yield Input(
+                self.args.system_one_model or "", id="system_one_model"
+            )
+            for name in LIMIT_FIELDS:
+                yield Label(name.replace("_", " ").capitalize())
+                yield Input(str(getattr(self.args, name)), id=name)
+            for name, label in (
+                ("no_thinking", "Disable thinking (Qwen / local models)"),
+                ("no_stream", "Disable streaming"),
+                ("no_stream_usage", "Disable streaming usage reporting"),
+                ("stats", "Show detailed statistics"),
+                ("no_patterns", "Disable reusable review checklists"),
+            ):
+                yield Checkbox(label, value=getattr(self.args, name), id=name)
 
     def on_mount(self) -> None:
         for name, description in SETTINGS_HELP.items():
@@ -152,92 +159,19 @@ class ConfigurationScreen(ModalScreen):
         self.query_one("#model_url", Input).focus()
         self.schedule_connection_check()
 
-    def update_placeholders(self) -> None:
-        provider: str | NoSelection = self.query_one("#provider", Select).value
-        self.query_one(
-            "#model_url", Input
-        ).placeholder = PROVIDER_DEFAULTS.get(
-            provider, "http://127.0.0.1:8000/v1"
-        )
-        self.query_one(
-            "#model_key_env", Input
-        ).placeholder = PROVIDER_KEYS.get(
-            provider, "HISTORY_AGENT_MODEL_API_KEY"
-        )
-
-    @on(Select.Changed, "#provider")
-    def provider_changed(self) -> None:
-        self.update_placeholders()
-        self.schedule_connection_check()
-
-    @on(Input.Changed)
-    def connection_changed(self, event: Input.Changed) -> None:
-        if event.input.id in (
-            "model_url", "model", "model_key_env",
-            "system_one_url", "system_one_model",
-        ):
-            self.schedule_connection_check()
-
-    def schedule_connection_check(self) -> None:
-        if not self.is_mounted:
-            return
-        self.connection_revision += 1
-        if self.connection_timer:
-            self.connection_timer.stop()
-        for name, label in (("model", "Model"), ("system-one", "System 1")):
-            self.query_one("#" + name + "-status", Static).update(
-                f"[dim]■ {label}: checking…[/]"
-            )
-        self.connection_timer = self.set_timer(
-            0.4, self.start_connection_check
-        )
-
-    @on(Button.Pressed, "#check-connections")
-    def start_connection_check(self) -> None:
-        if self.connection_timer:
-            self.connection_timer.stop()
-        self.run_worker(
-            self.check_connections(), group="connections", exclusive=True,
-            exit_on_error=False,
-        )
-
-    async def check_connections(self) -> None:
-        revision = self.connection_revision
-        args = copy(self.args)
-        args.provider = self.query_one("#provider", Select).value
-        for name in (
-            "model_url", "model", "model_key_env",
-            "system_one_url", "system_one_model",
-        ):
-            setattr(
-                args, name,
-                self.query_one("#" + name, Input).value.strip() or None,
-            )
-        results = await asyncio.gather(
-            asyncio.to_thread(probe_model_connection, args),
-            asyncio.to_thread(probe_system_one_connection, args),
-        )
-        if not self.is_mounted or revision != self.connection_revision:
-            return
-        for (name, label), (connected, detail) in zip(
-            (("model", "Model"), ("system-one", "System 1")), results,
-        ):
-            color = "green" if connected else "red"
-            state = "connected" if connected else "unavailable"
-            if name == "system-one" and not args.system_one_model:
-                state = "disabled"
-            widget = self.query_one("#" + name + "-status", Static)
-            widget.update(f"[{color}]■[/] {label}: {state}")
-            widget.tooltip = detail
-
     @on(Button.Pressed, "#save")
     def save(self) -> None:
         args: Namespace = copy(self.args)
         try:
             args.provider = self.query_one("#provider", Select).value
             for name in (
-                "model_url", "model", "history_url", "model_key_env",
-                "system_one_url", "system_one_model",
+                "model_url",
+                "model",
+                "history_url",
+                "model_key_env",
+                "system_one_url",
+                "system_one_model",
+                "prompts_file",
             ):
                 setattr(
                     args,
@@ -271,6 +205,10 @@ class ConfigurationScreen(ModalScreen):
                 )
             for name in BOOL_FIELDS:
                 setattr(args, name, self.query_one("#" + name, Checkbox).value)
+            args.capabilities = deepcopy(self.capabilities)
+            self.save_profile(args)
+            if args.prompts_file:
+                Prompts.validate(args.prompts_file)
             validate_defaults(
                 {name: getattr(args, name) for name in SAVED_FIELDS}
             )
@@ -293,6 +231,16 @@ class ConfigurationScreen(ModalScreen):
             self.query_one("#settings-error").scroll_visible()
             return
         self.dismiss(args)
+
+    @on(Button.Pressed, "#tool-settings")
+    def edit_capabilities(self):
+        self.app.push_screen(
+            CapabilityEditor(self.capabilities), self.policy_edited
+        )
+
+    def policy_edited(self, result):
+        if result is not None:
+            self.capabilities = result
 
     @on(Button.Pressed, "#cancel")
     def action_cancel(self) -> None:

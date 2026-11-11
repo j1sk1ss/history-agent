@@ -103,3 +103,10 @@ SETTINGS_HELP: dict[str, str] = {
     "save": "Save these settings for future launches and open the chat.",
     "cancel": "Close settings without saving changes.",
 }
+
+SETTINGS_HELP.update(
+    {
+        "model_profile": "Select a saved model or a manual connection.",
+        "prompts_file": "JSON prompt overrides with validated placeholders.",
+    }
+)

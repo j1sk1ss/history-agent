@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import sys
 
 from history_agent.configuration.defaults import (
     LIMIT_FIELDS,
     validate_defaults,
 )
+from history_agent.configuration.models import ModelCatalog
 from history_agent.interfaces.options import (
     DISPLAY_OPTIONS,
     JOB_OPTIONS,
@@ -22,6 +24,7 @@ def parse_args(
     *,
     defaults: dict[str, str | bool | int | float | None] | None = None,
 ) -> argparse.Namespace:
+    argv = list(sys.argv[1:] if argv is None else argv)
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description="Code review harness for local and hosted models"
     )
@@ -37,6 +40,8 @@ def parse_args(
         history_user=None,
         history_password=None,
         capabilities={},
+        providers={},
+        model_profile=None,
     )
     for flags, options in STREAM_OPTIONS:
         parser.add_argument(*flags, **options)
@@ -50,6 +55,15 @@ def parse_args(
     parser.set_defaults(**validate_defaults(defaults or {}))
     args: argparse.Namespace = parser.parse_args(argv)
     try:
+        explicit = {
+            action.dest
+            for action in parser._actions
+            if any(
+                token.split("=", 1)[0] in action.option_strings
+                for token in argv
+            )
+        }
+        ModelCatalog.apply(args, explicit)
         validate_defaults({name: getattr(args, name) for name in LIMIT_FIELDS})
     except ValueError as error:
         parser.error(str(error))
