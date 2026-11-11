@@ -64,8 +64,11 @@ class ItemClient(ToolClient):
                             pass
         if action == "agent_source" and isinstance(result, dict):
             for line in result.get("lines", []):
-                if isinstance(line, dict) and isinstance(
-                    line.get("number"), int
+                if (
+                    isinstance(line, dict)
+                    and type(line.get("number")) is int
+                    and line["number"] > 0
+                    and isinstance(line.get("text"), str)
                 ):
                     self.record.add(
                         (args["file"], line["number"], args["snapshot_id"])

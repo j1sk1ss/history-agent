@@ -14,6 +14,24 @@ from tests.test_system_one import TOOLS, LocalClient
 
 
 class PreflightTest(unittest.IsolatedAsyncioTestCase):
+    def test_invalid_source_lines_cannot_become_observed_evidence(self):
+        client = ItemClient(LocalClient(), {"snapshot_id": "snapshot"}, set())
+        client.observe(
+            "agent_source",
+            {
+                "file": "src/test.c",
+                "snapshot_id": "snapshot",
+            },
+            {
+                "lines": [
+                    {"number": True, "text": "invalid"},
+                    {"number": -1, "text": "invalid"},
+                    {"number": 5},
+                ]
+            },
+        )
+        self.assertFalse(client.record)
+
     def fixture(self, *, observed=True, complete=True):
         adviser = SystemOne("http://classifier", "clef-flash", 1)
         adviser.available = True
