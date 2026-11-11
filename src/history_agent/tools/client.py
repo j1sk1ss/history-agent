@@ -10,6 +10,10 @@ from history_agent.configuration.capabilities import CapabilitySettings
 from history_agent.inference.model import compact
 from history_agent.prompts import Prompts
 from history_agent.runtime.tools import ToolClient
+from history_agent.tools.code_context import (
+    CodeContextRequest,
+    CodeContextTools,
+)
 from history_agent.tools.documentation import (
     DocumentationRequest,
     DocumentationTools,
@@ -40,6 +44,8 @@ class CapabilityClient(ToolClient):
             tools.append(QuestionTools.definition())
         if self.settings.documentation.enabled:
             tools.append(DocumentationTools.definition())
+        if self.settings.lsp.enabled:
+            tools.append(CodeContextTools.definition())
         return tools
 
     def prompt_instructions(self):
@@ -61,9 +67,26 @@ class CapabilityClient(ToolClient):
                     request,
                     self.settings.documentation,
                 )
+            elif name == "code_context" and self.settings.lsp.enabled:
+                data = await CodeContextTools.execute(
+                    CodeContextRequest.model_validate(arguments),
+                    self.client,
+                    self.settings.lsp,
+                )
             else:
                 return await self.client.call_tool(name, arguments)
-        except (ValueError, OSError, HTTPException, ValidationError) as error:
+        except TimeoutError:
+            data = {
+                "error": "Tool request timed out; use smaller source windows"
+            }
+        except (
+            ValueError,
+            OSError,
+            HTTPException,
+            ValidationError,
+            asyncio.IncompleteReadError,
+            asyncio.LimitOverrunError,
+        ) as error:
             data = {"error": str(error)}
         return CallToolResult(
             content=[TextContent(type="text", text=compact(data))],
