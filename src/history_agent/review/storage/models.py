@@ -1,6 +1,6 @@
 """Mappings for the existing version 1 checkpoint tables."""
 
-from sqlalchemy import JSON, Integer, Text, column
+from sqlalchemy import JSON, Float, Integer, Text, column
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -43,6 +43,20 @@ class CheckerCache(Base):
 
     checker: Mapped[str] = mapped_column(Text, primary_key=True)
     value: Mapped[dict[str, object]] = mapped_column(JSON)
+
+
+class ReviewAttempt(Base):
+    __tablename__: str = "review_attempts"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    warning_id: Mapped[str] = mapped_column(Text, index=True)
+    started_at: Mapped[str] = mapped_column(Text)
+    finished_at: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, default="running")
+    route: Mapped[str] = mapped_column(Text, default="agent")
+    wall_seconds: Mapped[float] = mapped_column(Float, default=0)
+    waiting_seconds: Mapped[float] = mapped_column(Float, default=0)
+    agent_seconds: Mapped[float] = mapped_column(Float, default=0)
 
 
 class CheckerPattern(Base):

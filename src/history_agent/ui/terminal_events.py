@@ -32,12 +32,20 @@ class TerminalPresenter:
             "tool_end": self.handle_tool_end,
             "failure": self.handle_failure,
             "notice": self.handle_notice,
+            "review_timing": self.handle_review_timing,
         }
         handler: Callable[[str, dict[str, object]], None] | None = (
             handlers.get(kind)
         )
         if handler is not None:
             handler(kind, data)
+
+    def handle_review_timing(self, kind, data):
+        self.ui.append(
+            "tool", f"Review time: {data['agent_seconds']:.2f}s agent, "
+            f"{data['waiting_seconds']:.2f}s user wait, "
+            f"{data['wall_seconds']:.2f}s total\n",
+        )
 
     def handle_notice(self, kind: str, data: dict[str, object]) -> None:
         self.ui.append("tool", str(data["message"]) + "\n")

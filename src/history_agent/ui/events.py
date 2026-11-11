@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable
 
 from history_agent.ui import app as view
 from history_agent.ui.bridge import BackendEvent
+from history_agent.ui.clarifications import show_question
 from history_agent.ui.formatting import pretty, tool_preview
 from history_agent.ui.jobs import UnfinishedJobs
 from history_agent.ui.text import ThinkingText
@@ -34,7 +35,8 @@ class BackendPresenter:
         ] = {
             "begin": self.handle_begin,
             "input_ready": self.handle_input_ready,
-            "question": self.handle_question,
+            "question": lambda kind, data: show_question(self.ui, data),
+            "review_timing": self.handle_review_timing,
             "backend_done": self.handle_backend_done,
             "batch_started": self.handle_batch_started,
             "welcome": self.handle_welcome,
@@ -79,21 +81,6 @@ class BackendPresenter:
     ) -> None:
         self.ui.waiting, self.ui.busy = (True, False)
         self.ui.query_one(UnfinishedJobs).disabled = False
-        self.ui.query_one(CommandInput).disabled = False
-        self.ui.query_one(CommandInput).focus()
-
-    async def handle_question(
-        self, kind: str, data: dict[str, object]
-    ) -> None:
-        options = "\n".join(
-            f"{index}. {text}"
-            for index, text in enumerate(data.get("options", []), 1)
-        )
-        await self.ui.add_card(
-            "Agent question",
-            data["question"] + ("\n" + options if options else ""),
-        )
-        self.ui.waiting = True
         self.ui.query_one(CommandInput).disabled = False
         self.ui.query_one(CommandInput).focus()
 
@@ -236,6 +223,15 @@ class BackendPresenter:
             + (" | saved" if data["saved"] else " | proposed"),
             data["comment"],
             kind="verdict",
+        )
+
+    async def handle_review_timing(self, kind, data):
+        await self.ui.add_card(
+            "Review time",
+            f"{data['warning_id']} | "
+            f"agent {data['agent_seconds']:.2f}s | "
+            f"waiting {data['waiting_seconds']:.2f}s | "
+            f"total {data['wall_seconds']:.2f}s | {data['route']}",
         )
 
     async def handle_batch_patterns(

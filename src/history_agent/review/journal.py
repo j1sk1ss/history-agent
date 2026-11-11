@@ -13,6 +13,7 @@ from pathlib import Path
 from history_agent.inference.model import ChatError
 from history_agent.review.jobs import JobRunningError, job_lock
 from history_agent.review.storage.checkpoint import CheckpointStore
+from history_agent.review.timing import timing_summary
 
 
 class Journal(CheckpointStore):
@@ -46,6 +47,7 @@ class Journal(CheckpointStore):
             "states": states,
             "classifications": dict(classes),
             "checkpoint": str(self.path),
+            "timing": timing_summary(self),
         }
 
     @contextmanager

@@ -229,7 +229,13 @@ class Conversation(ConversationSummary):
             text: str = compact(
                 {
                     key: summary[key]
-                    for key in ("job_id", "total", "states", "classifications")
+                    for key in (
+                        "job_id",
+                        "total",
+                        "states",
+                        "classifications",
+                        "timing",
+                    )
                 }
             )
             if summary.get("comparison"):

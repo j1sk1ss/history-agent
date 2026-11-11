@@ -27,6 +27,7 @@ from history_agent.review.requests import (
     ResumeRequest,
 )
 from history_agent.review.storage.models import ReviewItem
+from history_agent.review.timing import ReviewTimer
 from history_agent.runtime.agent import Harness
 
 
@@ -207,4 +208,5 @@ class BatchRunner:
             self.on_event,
             reuse_patterns=self.reuse_patterns,
         )
-        return await investigation.run()
+        with ReviewTimer(job, row.warning_id, self.on_event):
+            return await investigation.run()

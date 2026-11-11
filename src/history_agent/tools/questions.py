@@ -6,6 +6,7 @@ from pydantic import Field, field_validator
 
 from history_agent.contracts import StrictModel
 from history_agent.prompts import Prompts
+from history_agent.review.timing import ReviewTimer
 from history_agent.tools.registry import ToolRegistry
 
 AnswerUser = Callable[[str, list[str]], Awaitable[str | None]]
@@ -38,10 +39,13 @@ class QuestionTools:
                 "status": "unavailable",
                 "guidance": Prompts.get("tools.no_answer"),
             }
-        text = await answer(request.question, request.options)
+        with ReviewTimer.wait_for_user():
+            text = await answer(request.question, request.options)
         if text is None or not text.strip():
             return {
                 "status": "unanswered",
                 "guidance": Prompts.get("tools.no_answer"),
             }
+        if text.isdigit() and 1 <= int(text) <= len(request.options):
+            text = request.options[int(text) - 1]
         return {"status": "answered", "answer": text[:8000]}
