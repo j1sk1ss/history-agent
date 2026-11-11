@@ -226,30 +226,6 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(server.writes)
 
     async def test_system_one_threshold_and_failure_fallback(self):
-        class AdvisedModel(ReviewModel):
-            def complete(self, messages, tools, on_event=None):
-                if messages[-1]["role"] == "user":
-                    self.requests.append(copy.deepcopy({
-                        "messages": messages, "tools": tools,
-                    }))
-                    return answer(calls=[call(
-                        "ask_system_one", {
-                            "code": "int value = 42;",
-                            "environment": "C; synthetic test program",
-                        }
-                    )])
-                advice = json.loads(messages[-1]["content"])
-                if advice.get("can_skip_investigation"):
-                    self.verdict = {
-                        "classification": advice["classification"],
-                        "comment": "Agree with adviser: src/a1.c:3",
-                        "evidence": [{
-                            "file": "src/a1.c", "line": 3,
-                            "snapshot_id": "snapshot",
-                        }],
-                    }
-                return super().complete(messages, tools, on_event)
-
         for confidence in (0.8, 0.79, 0.95, 80, 79, 69, "invalid", None):
             with self.subTest(confidence=confidence), self.fixture() as server:
                 server.warnings = [warning("a1")]
@@ -258,7 +234,7 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
                 )
                 async with Client(create_server(history)) as client:
                     tools = (await client.list_tools()).tools
-                    model = AdvisedModel()
+                    model = ReviewModel()
                     adviser = SystemOne("http://systemone", "fast", 1)
                     adviser.available = True
                     runner = self.runner(
@@ -279,17 +255,19 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
                             request.side_effect = OSError("unavailable")
                         result = await runner.run(SCOPE, write=True)
                     self.assertEqual(result["states"], {"saved": 1})
-                    self.assertEqual(len(model.requests), 2)
                     high = confidence in (0.8, 0.79, 0.95, 80, 79, 0.7)
+                    self.assertEqual(len(model.requests), 0 if high else 1)
                     self.assertEqual(
                         result["classifications"],
                         {"FP" if high else "TP": 1},
                     )
-                    response = model.requests[1]["messages"][-1]
-                    data = json.loads(response["content"])
                     if confidence in (0.69, 69):
-                        self.assertEqual(data["classification"], "FP")
-                        self.assertEqual(data["confidence"], 0.69)
+                        hints = [json.loads(message["content"])
+                                 for message in model.requests[0]["messages"]
+                                 if message["role"] == "tool"]
+                        hint = next(h for h in hints if "confidence" in h)
+                        self.assertEqual(hint["classification"], "FP")
+                        self.assertEqual(hint["confidence"], 0.69)
                     payload = request.call_args.args[2] if confidence else {}
                     if payload:
                         self.assertIn("UNIQUE_A_RULE", payload["state"])
@@ -1028,7 +1006,7 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(
                 "UNIQUE_A_RULE", json.dumps(model_server.requests[3])
             )
-            self.assertEqual(len(model_server.requests[3]["tools"]), 3)
+            self.assertEqual(len(model_server.requests[3]["tools"]), 5)
             self.assertFalse(server.writes)
 
 

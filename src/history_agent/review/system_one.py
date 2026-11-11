@@ -10,7 +10,9 @@ from urllib.error import HTTPError, URLError
 
 from mcp import Client
 from mcp.types import CallToolResult, TextContent, Tool
+from pydantic import Field
 
+from history_agent.contracts import StrictModel
 from history_agent.inference.model import ChatError, compact
 from history_agent.inference.transport import _records, _request
 from history_agent.prompts import Prompts
@@ -22,6 +24,7 @@ from history_agent.review.system_one_context import (
     warning_context as warning_context,
 )
 from history_agent.runtime.tools import ToolClient
+from history_agent.tools.registry import ToolRegistry
 
 CRITERIA: dict[str, str] = {
     key: Prompts.get("system_one." + key.lower()) for key in STATUSES
@@ -34,6 +37,7 @@ class SystemOne:
     model: str
     timeout: float
     available: bool = field(default=False, init=False)
+    max_input_bytes: int = 65536
 
     def probe(self) -> bool:
         self.available = (
@@ -52,6 +56,8 @@ class SystemOne:
         *,
         timeout: float | None = None,
     ) -> dict[str, object] | None:
+        if len(state.encode("utf-8")) > self.max_input_bytes:
+            return None
         try:
             with _request(
                 self.url,
@@ -87,12 +93,16 @@ class SystemOne:
             ):
                 return None
             confidence: float = score / 100 if score > 1 else float(score)
-            return {
+            result = {
                 "model": self.model,
                 "classification": choice,
                 "confidence": confidence,
                 "can_skip_investigation": confidence >= 0.7,
             }
+            explanation = answer.get("explanation", answer.get("reason"))
+            if isinstance(explanation, str) and explanation.strip():
+                result["explanation"] = explanation[:4000]
+            return result
         except (
             URLError,
             OSError,
@@ -109,41 +119,13 @@ class SystemOne:
             return None
 
 
-ADVISER: Tool = Tool(
-    name="ask_system_one",
-    description=(
-        "REQUIRED first analysis step for every warning, including obvious "
-        "cases. Call directly with available code BEFORE further "
-        "investigation "
-        "or a verdict; the host supplies warning text, TP conditions, "
-        "the trace and code within 5 lines of every trace point. "
-        "At confidence >= 0.7 with can_skip_investigation=true, submit "
-        "immediately unless evidence contradicts the result. Otherwise "
-        "use the recommendation to focus further investigation."
-    ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "code": {
-                "type": "string",
-                "minLength": 1,
-                "description": (
-                    "Relevant code only; "
-                    "no tool JSON, IDs or history metadata."
-                ),
-            },
-            "environment": {
-                "type": "string",
-                "default": "",
-                "description": (
-                    "Relevant declarations, inputs, assumptions and project "
-                    "constraints. Omit snapshots, branch/project IDs and URLs."
-                ),
-            },
-        },
-        "required": ["code"],
-        "additionalProperties": False,
-    },
+class SystemOneRequest(StrictModel):
+    code: str = Field(min_length=1)
+    environment: str = ""
+
+
+ADVISER: Tool = ToolRegistry.create(
+    "ask_system_one", Prompts.get("tools.system_one"), SystemOneRequest
 )
 
 
@@ -155,6 +137,7 @@ class SystemOneClient(ToolClient):
     ) -> None:
         self.client = client
         self.system_one = system_one
+        self.preflight_done = False
         self.context: Callable[[], dict[str, object]] | None = None
         self.load_context: (
             Callable[[], Awaitable[dict[str, object]]] | None
@@ -163,20 +146,32 @@ class SystemOneClient(ToolClient):
     def local_tools(self) -> list[Tool]:
         inherited = (
             self.client.local_tools()
-            if isinstance(self.client, ToolClient) else []
+            if isinstance(self.client, ToolClient)
+            else []
         )
-        return inherited + ([ADVISER] if (
-            self.system_one and self.system_one.available
-        ) else [])
+        return inherited + (
+            [ADVISER]
+            if (self.system_one and self.system_one.available)
+            else []
+        )
 
     def prompt_instructions(self) -> str:
         inherited = (
             self.client.prompt_instructions()
-            if isinstance(self.client, ToolClient) else ""
+            if isinstance(self.client, ToolClient)
+            else ""
         )
-        advice = Prompts.get("runtime.system_one").format(
-            model=self.system_one.model
-        ) if self.system_one and self.system_one.available else ""
+        advice = (
+            Prompts.get("runtime.system_one").format(
+                model=self.system_one.model
+            )
+            if (
+                self.system_one
+                and self.system_one.available
+                and not self.preflight_done
+            )
+            else ""
+        )
         return " ".join(part for part in (inherited, advice) if part)
 
     async def call_tool(
@@ -201,13 +196,17 @@ class SystemOneClient(ToolClient):
         else:
             if self.load_context:
                 metadata = await self.load_context()
-            complete = all(
-                metadata.get(key)
-                for key in (
-                    "warning_description",
-                    "tp_conditions",
+            complete = (
+                all(
+                    metadata.get(key)
+                    for key in (
+                        "warning_description",
+                        "tp_conditions",
+                    )
                 )
-            ) and metadata.get("trace_complete", True)
+                and metadata.get("trace_complete", True)
+                and metadata.get("tp_complete", True)
+            )
             state = compact(
                 {
                     "code": code,
@@ -219,7 +218,12 @@ class SystemOneClient(ToolClient):
                     "trace": metadata.get("trace", []),
                 }
             )
-            data = await asyncio.to_thread(self.system_one.classify, state)
+            if len(state.encode()) > self.system_one.max_input_bytes:
+                data = {
+                    "error": "Input budget exceeded; investigate manually."
+                }
+            else:
+                data = await asyncio.to_thread(self.system_one.classify, state)
             if data is None:
                 self.system_one.available = False
                 data = {"error": "Adviser unavailable; investigate normally."}

@@ -9,7 +9,10 @@ from mcp import Client
 from history_agent.history.client import HistoryError
 from history_agent.history.constants import URL_ACTION
 from history_agent.inference.model import ChatError
-from history_agent.review.system_one_trace import load_trace_context
+from history_agent.review.system_one_trace import (
+    history_reads,
+    load_trace_context,
+)
 from history_agent.runtime.messages import tool_exchange
 from history_agent.runtime.tools import ToolClient
 
@@ -141,4 +144,53 @@ async def load_warning_context(
         if not metadata.get("tp_conditions"):
             await read("agent_checker_documentation", arguments)
             metadata = warning_context(packets)
-    return {**metadata, **await load_trace_context(client, packets, target)}
+    for _ in range(4):
+        documents = checker_documents(packets, checker)
+        last = documents[-1] if documents else {}
+        offset = last.get("next_offset")
+        if not last.get("has_more") or type(offset) is not int:
+            break
+        if not await read(
+            "agent_checker_documentation",
+            {
+                "checker_name": checker,
+                "offset": offset,
+            },
+        ):
+            break
+    metadata = warning_context(packets)
+    return {
+        **metadata,
+        "tp_complete": complete_documentation(packets, checker),
+        **await load_trace_context(client, packets, target),
+    }
+
+
+def checker_documents(packets, checker):
+    pages = {}
+    for action, arguments, data in history_reads(packets):
+        if action not in ("agent_checker_info", "agent_checker_documentation"):
+            continue
+        if (
+            str(arguments.get("checker_name", "")).casefold()
+            != str(checker).casefold()
+        ):
+            continue
+        document = data.get("documentation", data)
+        if isinstance(document, dict) and isinstance(
+            document.get("text"), str
+        ):
+            pages[document.get("offset", arguments.get("offset", 0))] = (
+                document
+            )
+    return [pages[key] for key in sorted(pages)]
+
+
+def complete_documentation(packets, checker):
+    documents = checker_documents(packets, checker)
+    offset = 0
+    for document in documents:
+        if document.get("offset", 0) != offset:
+            return False
+        offset += len(document["text"])
+    return bool(documents) and not documents[-1].get("has_more", False)

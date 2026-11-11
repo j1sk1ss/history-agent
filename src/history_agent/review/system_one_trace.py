@@ -44,25 +44,34 @@ def trace_points(value: object, snapshot: str) -> list[dict[str, object]]:
         location = value.get("location", value)
         if isinstance(location, str):
             match = re.fullmatch(r"(.+?):(\d+)(?::\d+)?", location)
-            location = {
-                "file": match[1], "line": int(match[2]),
-            } if match else {}
+            location = (
+                {
+                    "file": match[1],
+                    "line": int(match[2]),
+                }
+                if match
+                else {}
+            )
         if not isinstance(location, dict):
             location = {}
-        current = location.get("snapshot_override") or value.get(
-            "snapshot_override"
-        ) or snapshot
+        current = (
+            location.get("snapshot_override")
+            or value.get("snapshot_override")
+            or snapshot
+        )
         if not isinstance(current, str):
             current = snapshot
         file = (
-            location.get("file_path") or location.get("file")
+            location.get("file_path")
+            or location.get("file")
             or location.get("path")
         )
         line = location.get("line")
         if isinstance(line, str) and line.isdigit():
             line = int(line)
         message = (
-            value.get("message") or value.get("description")
+            value.get("message")
+            or value.get("description")
             or value.get("text")
         )
         point = {}
@@ -90,7 +99,8 @@ def trace_points(value: object, snapshot: str) -> list[dict[str, object]]:
 
 
 def source_lines(
-    data: dict[str, object], line: int,
+    data: dict[str, object],
+    line: int,
 ) -> list[dict[str, object]]:
     entries = data.get("lines", [])
     if not isinstance(entries, list):
@@ -105,11 +115,7 @@ def source_lines(
     ]
 
 
-async def load_trace_context(
-    client: Client | ToolClient, messages: list[dict[str, object]],
-    target: dict[str, object],
-) -> dict[str, object]:
-    records = list(history_reads(messages))
+def cached_trace(records, target):
     warning = {}
     trace = None
     cache = {}
@@ -121,9 +127,14 @@ async def load_trace_context(
         )
         if action == "get_warning" and matches:
             warning = data.get("warning", {})
-        elif action in (
-            "get_warning_trace_and_role", "get_warning_trace",
-        ) and matches:
+        elif (
+            action
+            in (
+                "get_warning_trace_and_role",
+                "get_warning_trace",
+            )
+            and matches
+        ):
             trace = data.get("trace", data.get("traces", data))
         elif action == "agent_source":
             line = arguments.get("line")
@@ -133,24 +144,43 @@ async def load_trace_context(
                 and arguments.get("after", 10) >= 5
             ):
                 key = (
-                    arguments.get("project_id"), arguments.get("snapshot_id"),
-                    arguments.get("file"), line,
+                    arguments.get("project_id"),
+                    arguments.get("snapshot_id"),
+                    arguments.get("file"),
+                    line,
                 )
                 cache[key] = source_lines(data, line)
+
+    return warning, trace, cache
+
+
+async def load_trace_context(
+    client: Client | ToolClient,
+    messages: list[dict[str, object]],
+    target: dict[str, object],
+) -> dict[str, object]:
+    warning, trace, cache = cached_trace(list(history_reads(messages)), target)
 
     semaphore = asyncio.Semaphore(4)
 
     async def read(action: str, arguments: dict[str, object]) -> dict | None:
         async with semaphore:
             try:
-                result = await client.call_tool("history_read", {
-                    "action": action, "arguments": arguments,
-                })
+                result = await client.call_tool(
+                    "history_read",
+                    {
+                        "action": action,
+                        "arguments": arguments,
+                    },
+                )
                 if not result.is_error:
-                    data = json.loads("".join(
-                        part.text for part in result.content
-                        if part.type == "text"
-                    ))
+                    data = json.loads(
+                        "".join(
+                            part.text
+                            for part in result.content
+                            if part.type == "text"
+                        )
+                    )
                     if isinstance(data, dict):
                         return data
             except (HistoryError, ChatError, TypeError, ValueError):
@@ -166,16 +196,19 @@ async def load_trace_context(
     points = trace_points(trace, target.get("snapshot_id", ""))
     project = target.get("project_id")
     needed = {}
-    for point in points:
+    for point in points[:64]:
         if "file" in point:
             key = (project, point["_snapshot"], point["file"], point["line"])
             if project is None or not point["_snapshot"]:
                 cache[key] = []
             if key not in cache:
                 needed[key] = {
-                    "project_id": project, "snapshot_id": point["_snapshot"],
-                    "file": point["file"], "line": point["line"],
-                    "before": 5, "after": 5,
+                    "project_id": project,
+                    "snapshot_id": point["_snapshot"],
+                    "file": point["file"],
+                    "line": point["line"],
+                    "before": 5,
+                    "after": 5,
                 }
 
     async def load(key: tuple, arguments: dict[str, object]) -> None:
@@ -183,7 +216,12 @@ async def load_trace_context(
         cache[key] = source_lines(data or {}, arguments["line"])
 
     await asyncio.gather(*(load(key, args) for key, args in needed.items()))
-    complete = trace is not None
+    return attach_code(
+        points[:64], cache, project, trace is not None and len(points) <= 64
+    )
+
+
+def attach_code(points, cache, project, complete):
     clean = []
     for point in points:
         event = {
