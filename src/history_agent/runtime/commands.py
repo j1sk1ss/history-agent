@@ -12,6 +12,7 @@ COMMANDS: tuple[str, ...] = (
     "/reset",
     "/reload",
     "/batch",
+    "/review",
     "/diff",
     "/resume",
     "/quit",
@@ -25,6 +26,8 @@ HELP: str = """Commands (Tab completes names; ↑/↓ recall this session's inpu
   /reload                             Retry the last request or stopped job
   /batch [PROJECT BRANCH SNAPSHOT [CHECKER]]
                                       Review warnings (defaults via current)
+  /review PROJECT BRANCH SNAPSHOT WARNING
+                                      Review one warning
   /diff PROJECT BRANCH CURRENT BASE [appeared|disappeared|both] [CHECKER]
                                       Review a difference (default: appeared)
   /resume JOB_ID                      Resume a saved batch (Tab completes IDs)

@@ -9,6 +9,7 @@ from history_agent.inference.model import ChatError
 
 COMMAND_USAGE: str = (
     "Use /batch [PROJECT BRANCH SNAPSHOT [CHECKER]], "
+    "/review PROJECT BRANCH SNAPSHOT WARNING, "
     "/diff PROJECT BRANCH CURRENT BASE [appeared|disappeared|both] [CHECKER], "
     "or /resume JOB_ID"
 )
@@ -57,6 +58,10 @@ async def command_arguments(
         }, False
     if parts[0] == "/batch" and len(parts) in (4, 5):
         return batch_scope(parts, args), False
+    if parts[0] == "/review" and len(parts) == 5:
+        values = batch_scope(parts[:4], args)
+        values["warning_id"] = parts[4]
+        return values, False
     if parts[0] == "/diff" and len(parts) in (5, 6, 7):
         return difference_scope(parts, args), False
     raise ChatError(COMMAND_USAGE)

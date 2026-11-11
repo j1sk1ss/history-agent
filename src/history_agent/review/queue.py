@@ -21,7 +21,9 @@ class ReviewQueue:
 
     async def collect(self, job: Journal) -> None:
         job.clear_items()
-        if job.get("comparison"):
+        if job.get("warning_id"):
+            await self.collect_single(job)
+        elif job.get("comparison"):
             await self.collect_difference(job)
         else:
             scope: dict[str, str | int] = job.get("scope")
@@ -39,6 +41,20 @@ class ReviewQueue:
                     checker,
                 )
         job.set("queue_complete", True)
+
+    async def collect_single(self, job: Journal) -> None:
+        identity = job.get("warning_id")
+        data = await self.read(
+            "get_warning",
+            {
+                **job.get("scope"),
+                "warning_id": identity,
+            },
+        )
+        warning = data.get("warning", {})
+        if warning.get("warning_id") != identity:
+            raise ChatError("Requested warning identity mismatch")
+        self.store(job, [warning], 0, job.get("checker_name"))
 
     async def checkers(self, job: Journal) -> list[str]:
         checker: str | None = job.get("checker_name")
@@ -72,8 +88,12 @@ class ReviewQueue:
         await self.scan(job, COMPARE_ACTION, values, 0, None)
 
     async def scan(
-        self, job: Journal, action: str, values: dict[str, object],
-        ordinal: int, checker: str | None,
+        self,
+        job: Journal,
+        action: str,
+        values: dict[str, object],
+        ordinal: int,
+        checker: str | None,
     ) -> int:
         offset: int = 0
         while True:
@@ -105,7 +125,10 @@ class ReviewQueue:
             offset = next_offset
 
     def store(
-        self, job: Journal, warnings: list[dict[str, object]], ordinal: int,
+        self,
+        job: Journal,
+        warnings: list[dict[str, object]],
+        ordinal: int,
         checker: str | None,
     ) -> int:
         items: list[ReviewItem] = []

@@ -144,6 +144,7 @@ class BatchRunner:
             "instructions": request.instructions,
             "overwrite": request.overwrite,
             "checker_name": request.checker_name,
+            "warning_id": request.warning_id,
         }
         for key, value in values.items():
             job.set(key, value)

@@ -1,6 +1,6 @@
 """New reviews and checkpoint resumes are distinct validated commands."""
 
-from pydantic import Field, RootModel
+from pydantic import Field, RootModel, model_validator
 
 from history_agent.contracts import StrictModel
 from history_agent.history.requests import ComparisonOptions, SnapshotId
@@ -15,8 +15,17 @@ class BatchSelection(ComparisonOptions):
     stream_id: str | None = Field(default=None, min_length=1)
     snapshot_id: SnapshotId | None = None
     checker_name: str | None = Field(default=None, min_length=1)
+    warning_id: str | None = Field(default=None, min_length=1, max_length=200)
     instructions: str = Field(default="", max_length=8000)
     overwrite: bool = False
+
+    @model_validator(mode="after")
+    def concrete_single_scope(self):
+        if self.warning_id and self.base_snapshot_id is not None:
+            raise ValueError(
+                "Single-warning review requires its concrete snapshot scope"
+            )
+        return self
 
 
 class BatchRequest(BatchSelection):

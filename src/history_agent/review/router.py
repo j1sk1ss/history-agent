@@ -17,6 +17,7 @@ from history_agent.inference.model import ChatError, compact
 from history_agent.review.actions import BATCH_REVIEW, DIFFERENCE_REVIEW
 from history_agent.review.batch import BatchRunner
 from history_agent.review.constants import BATCH_ACTION, DIFF_ACTION
+from history_agent.review.journal import Journal
 from history_agent.review.requests import (
     BatchCommand,
     BatchSelection,
@@ -46,7 +47,9 @@ class BatchRouter(ToolClient):
         self.user_request: str = ""
 
     async def call_tool(
-        self, name: str, arguments: dict[str, object],
+        self,
+        name: str,
+        arguments: dict[str, object],
     ) -> CallToolResult:
         action: str | None = arguments.get("action")
         if action in (BATCH_ACTION, DIFF_ACTION):
@@ -78,7 +81,10 @@ class BatchRouter(ToolClient):
         return result
 
     async def run_batch(
-        self, name: str, action: str, arguments: dict[str, object],
+        self,
+        name: str,
+        action: str,
+        arguments: dict[str, object],
     ) -> CallToolResult:
         if name == "history_discover":
             definition: ActionDefinition = (
@@ -120,15 +126,29 @@ class BatchRouter(ToolClient):
 
         result: dict[str, object] | CallToolResult = await self.runner.run(
             values,
-            write=self.runner.allow_write or name == "history_write",
+            write=self.save_mode(name, values),
         )
 
         self.completed = result
 
         return reply(result)
 
+    def save_mode(self, name: str, values: dict[str, object]) -> bool:
+        single = bool(values.get("warning_id"))
+        if values.get("job_id"):
+            checkpoint = Journal(self.runner.root, values["job_id"])
+            try:
+                single = bool(checkpoint.get("warning_id"))
+            finally:
+                checkpoint.close()
+        return name == "history_write" or (
+            self.runner.allow_write and not single
+        )
+
     async def default_scope(
-        self, action: str, values: dict[str, object],
+        self,
+        action: str,
+        values: dict[str, object],
     ) -> dict[str, object]:
         if (
             action == BATCH_ACTION

@@ -141,7 +141,7 @@ class Session:
             self.conversation.router.completed = None
             await self.conversation.perform(self.conversation.retry())
             return
-        if text.split()[0] in ("/batch", "/diff", "/resume"):
+        if text.split()[0] in ("/batch", "/review", "/diff", "/resume"):
             arguments: dict[str, object]
             resume: bool
             arguments, resume = await command_arguments(
