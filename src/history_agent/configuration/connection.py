@@ -28,10 +28,38 @@ def valid_url(value: str) -> str:
     return value.rstrip("/")
 
 
+def history_credentials() -> None:
+    user: str | None
+    password: str | None
+    user, password = (
+        os.environ.get("HISTORY_USER"),
+        os.environ.get("HISTORY_PASSWORD"),
+    )
+    if (user is None) != (password is None):
+        raise ValueError(
+            "Set both HISTORY_USER and HISTORY_PASSWORD, or only "
+            "HISTORY_SESSION"
+        )
+
+
 def prepare(args: argparse.Namespace) -> None:
     if getattr(args, "prepared", False):
         return
     args.history_url = valid_url(args.history_url)
+    history_credentials()
+    if args.client == "pi":
+        # Pi manages its own models and authentication; the setup only
+        # connects this project's history MCP server.
+        args.api = None
+        args.model = None
+        args.model_base = None
+        args.model_endpoint = None
+        args.prepared = True
+        return
+    if not args.model_url:
+        raise ValueError(
+            "--model-url is required for this client; pi does not need it"
+        )
     url: str = valid_url(args.model_url)
     expected: str = {"codex": "responses", "claude-code": "messages"}.get(
         args.client, "chat-completions"
@@ -84,17 +112,6 @@ def prepare(args: argparse.Namespace) -> None:
     if not args.model.strip() or any(ord(c) < 32 for c in args.model):
         raise ValueError(
             "Model ID must be non-empty and contain no control characters"
-        )
-    user: str | None
-    password: str | None
-    user, password = (
-        os.environ.get("HISTORY_USER"),
-        os.environ.get("HISTORY_PASSWORD"),
-    )
-    if (user is None) != (password is None):
-        raise ValueError(
-            "Set both HISTORY_USER and HISTORY_PASSWORD, or only "
-            "HISTORY_SESSION"
         )
     args.prepared = True
 

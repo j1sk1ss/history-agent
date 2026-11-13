@@ -8,7 +8,7 @@ from collections.abc import Callable
 from mcp import Client
 
 from history_agent.history.client import HistoryClient, HistoryError
-from history_agent.inference.model import compact
+from history_agent.inference.model import ChatError, compact
 from history_agent.review import patterns, prompts
 from history_agent.review.client import ItemClient, ReadScopeError
 from history_agent.review.journal import Journal
@@ -53,12 +53,24 @@ class Investigation(ReviewPrefetch):
         reviewer: Harness = await self.prepare_reviewer(checker)
         pending: dict[str, object] | None = self.pending_response()
         prompt: str = self.build_prompt(pending)
+        response: VerdictResponse = VerdictResponse(
+            self.job,
+            self.row,
+            self.baseline,
+            self.client,
+            self.reviewer_factory,
+            self.on_event,
+        )
+        raw: str = ""
         for attempt in range(3):
             try:
-                raw: str = await self.obtain_response(
-                    reviewer, prompt, pending
+                raw = await self.obtain_response(reviewer, prompt, pending)
+                original_raw: str = (
+                    pending.get("original_raw", pending["raw"])
+                    if pending and not pending.get("retry_investigation")
+                    else raw
                 )
-                break
+                return await response.resolve(raw, original_raw)
             except ReadScopeError as error:
                 if attempt == 2:
                     raise
@@ -76,20 +88,27 @@ class Investigation(ReviewPrefetch):
                 self.client.record.clear()
                 reviewer = await self.prepare_reviewer(checker)
                 prompt = self.build_prompt(pending) + feedback
-        original_raw: str = (
-            pending.get("original_raw", pending["raw"])
-            if pending and not pending.get("retry_investigation")
-            else raw
-        )
-        response: VerdictResponse = VerdictResponse(
-            self.job,
-            self.row,
-            self.baseline,
-            self.client,
-            self.reviewer_factory,
-            self.on_event,
-        )
-        return await response.resolve(raw, original_raw)
+            except ChatError as error:
+                retriable: dict[str, object] | None = (
+                    self.pending_response()
+                )
+                if (
+                    retriable is None
+                    or not retriable.get("retry_investigation")
+                    or attempt == 2
+                ):
+                    raise
+                self.on_event(
+                    "notice", message=(
+                        f"Reloading warning {self.row.warning_id} after "
+                        f"rejected verdict ({attempt + 1}/2): {error}"
+                    ),
+                )
+                self.client.record.clear()
+                pending = retriable
+                reviewer = await self.prepare_reviewer(checker)
+                prompt = self.build_prompt(pending)
+        raise ChatError("Batch verdict failed validation after re-reviews")
 
     async def prepare_reviewer(
         self, checker: dict[str, object],

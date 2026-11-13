@@ -87,6 +87,51 @@ class FormatterTest(unittest.TestCase):
         self.assertIn("IN ~1024  OUT ~2  CACHE -", summary)
         self.assertIn("tok/s", summary)
 
+    def test_metrics_show_cumulative_job_review_time(self):
+        metrics = SessionMetrics()
+        metrics.event("batch_started", job_id="job1")
+        metrics.event(
+            "batch_progress",
+            job_id="job1",
+            done=1,
+            total=3,
+            checker="A_CHECKER",
+            warning_id="a1",
+        )
+        metrics.event(
+            "review_timing",
+            warning_id="a1",
+            status="completed",
+            route="agent",
+            wall_seconds=12.5,
+            waiting_seconds=5.0,
+            agent_seconds=7.5,
+        )
+        summary = metrics.summary("Working", context_limit=65536)
+        self.assertIn("1/3", summary)
+        self.assertIn("12.5s review", summary)
+        detailed = metrics.summary("Working", context_limit=65536,
+                                   detailed=True)
+        self.assertIn("agent 7.5s", detailed)
+        self.assertIn("wait 5.0s", detailed)
+        metrics.event(
+            "review_timing",
+            warning_id="a1",
+            status="completed",
+            route="system_one",
+            wall_seconds=3.25,
+            waiting_seconds=0.0,
+            agent_seconds=3.25,
+        )
+        self.assertIn("15.8s review",
+                      metrics.summary("Working", context_limit=65536))
+        metrics.event("batch_finished", summary={})
+        self.assertNotIn("s review",
+                         metrics.summary("Ready", context_limit=65536))
+        metrics.event("batch_started", job_id="job2")
+        self.assertIn("0.0s review",
+                      metrics.summary("Working", context_limit=65536))
+
 
 class InterfaceTest(unittest.IsolatedAsyncioTestCase):
     def make_app(self):

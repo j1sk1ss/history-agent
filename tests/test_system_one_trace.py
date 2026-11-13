@@ -94,7 +94,7 @@ class SystemOneTraceTest(unittest.IsolatedAsyncioTestCase):
 
     def transport(
         self, missing_source=False, inline=False, cached=False,
-        serialized=False,
+        serialized=False, short_cached=False,
     ):
         backend = TraceClient(missing_source, serialized)
         client = ItemClient(backend, TARGET, set())
@@ -111,13 +111,13 @@ class SystemOneTraceTest(unittest.IsolatedAsyncioTestCase):
             "checker", "agent_checker_info", {"checker_name": "ZERO"},
             json.dumps({"documentation": {"text": "TP when divisor is zero"}}),
         )
-        if cached:
+        if cached or short_cached:
             messages += tool_exchange("source", "agent_source", {
                 "project_id": 1, "snapshot_id": "PRIVATE_CURRENT",
                 "file": "src/init.c", "line": 3, "before": 5, "after": 5,
             }, json.dumps({"lines": [
                 {"number": line, "text": f"cached code line {line}"}
-                for line in range(1, 15)
+                for line in ([3] if short_cached else range(1, 15))
             ]}))
         adviser = SystemOne("http://systemone", "fast", 1)
         adviser.available = True
@@ -175,6 +175,87 @@ class SystemOneTraceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(state["trace"][0]["code"]), 8)
         self.assertIn("cached code", state["trace"][0]["code"][0]["text"])
         self.assertTrue(result["can_skip_investigation"])
+
+    async def test_short_cached_fragment_is_replaced_with_a_full_window(self):
+        state, result, calls = await self.assess(short_cached=True)
+        source = [args for action, args in calls if action == "agent_source"]
+        self.assertEqual(len(source), 2)
+        self.assertEqual(
+            [line["number"] for line in state["trace"][0]["code"]],
+            list(range(1, 9)),
+        )
+        self.assertIn("current code", state["trace"][0]["code"][0]["text"])
+        self.assertTrue(result["can_skip_investigation"])
+
+    async def test_http_question_has_paged_guide_and_source_windows(self):
+        documentation = (
+            "ZERO reports division by zero when the divisor can be zero. "
+            "A guard that excludes zero makes the reported path infeasible. "
+            "Example: if (n != 0) return 1 / n; is not a defect."
+        )
+
+        class DocumentationClient(TraceClient):
+            async def call_tool(self, name, arguments):
+                action = arguments["action"]
+                if action in (
+                    "agent_checker_info", "agent_checker_documentation",
+                ):
+                    self.calls.append((action, arguments["arguments"]))
+                    if action == "agent_checker_info":
+                        return reply({
+                            "documentation": {"status": "unavailable"},
+                        })
+                    offset = arguments["arguments"].get("offset", 0)
+                    end = 73 if offset == 0 else len(documentation)
+                    return reply({
+                        "text": documentation[offset:end], "offset": offset,
+                        "has_more": end < len(documentation),
+                        "next_offset": end,
+                        "source_url": "PRIVATE_GUIDE_URL",
+                    })
+                return await super().call_tool(name, arguments)
+
+        backend = DocumentationClient()
+        client = ItemClient(backend, TARGET, set())
+        messages = tool_exchange("warning", "get_warning", TARGET, json.dumps({
+            "warning": {"checker_name": "ZERO", "message": "Division by zero"},
+        }))
+        adviser = SystemOne("http://systemone", "fast", 1)
+        adviser.available = True
+        transport = SystemOneClient(client, adviser)
+        transport.load_context = lambda: load_warning_context(client, messages)
+        with patch(
+            "history_agent.review.system_one._request"
+        ) as request, patch(
+            "history_agent.review.system_one._records",
+            return_value=iter([{"answers": {"sentiment": {
+                "choice": "TP", "confidence": 0.9,
+            }}}]),
+        ):
+            result = await transport.call_tool("ask_system_one", {
+                "code": "return 1 / n;", "environment": "C; n is user input",
+            })
+        self.assertTrue(
+            json.loads(result.content[0].text)["can_skip_investigation"]
+        )
+        payload = request.call_args.args[2]
+        question = payload["questions"]["sentiment"]["instructions"]
+        self.assertIn(documentation, question)
+        self.assertIn("ZERO: Division by zero", question)
+        self.assertTrue(any(
+            action == "agent_checker_documentation"
+            for action, _ in backend.calls
+        ))
+        evidence = payload["state"]
+        self.assertIn("Initial source code:\nreturn 1 / n;", evidence)
+        self.assertIn("Trace point 1 — src/init.c:3", evidence)
+        self.assertIn("Trace point 2 — src/use.c:20", evidence)
+        self.assertIn("Trace point 3 — src/use.c:20", evidence)
+        self.assertIn(">     3 | current code line 3", evidence)
+        self.assertIn(">    20 | old code line 20", evidence)
+        for line in range(15, 26):
+            self.assertIn(f"old code line {line}", evidence)
+        self.assertNotIn("PRIVATE", json.dumps(payload))
 
     async def test_missing_source_keeps_trace_and_requires_investigation(self):
         state, result, _ = await self.assess(missing_source=True)

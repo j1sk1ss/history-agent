@@ -107,4 +107,14 @@ Tests use local fake HTTP servers, a deterministic stdio LSP peer and an isolate
   --model qwen-local
 ```
 
-Supported clients: `copilot`, `opencode`, `openclaw`, `hermes`, `claude-code`, and `codex`. The latter two require Messages and Responses compatible endpoints, respectively. Keep this checkout at the configured path.
+Supported clients: `copilot`, `opencode`, `openclaw`, `hermes`, `claude-code`, `codex`, and `pi`. `claude-code` and `codex` require Messages and Responses compatible endpoints, respectively. Keep this checkout at the configured path.
+
+`pi` sets up a lightweight annotation-only harness: it connects the shared history MCP server to Pi's user-level configuration (`~/.pi/agent/mcp.json`) and does not configure a model endpoint, because Pi manages its own models and authentication. `--model-url` and `--model` are not needed:
+
+```sh
+.venv/bin/python configure.py \
+  --client pi \
+  --history-url http://127.0.0.1:8060
+```
+
+Then run `pi` in any directory, check the connection with `/mcp`, and start with `history_discover(action='workflow')`.

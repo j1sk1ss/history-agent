@@ -25,6 +25,9 @@ class SessionMetrics:
         self.usage: dict[str, object] = {}
         self.accounted: bool = True
         self.error: str | None = None
+        self.review_wall: float = 0.0
+        self.review_wait: float = 0.0
+        self.review_agent: float = 0.0
 
     def event(self, kind: str, **data: object) -> None:
         now: float = time.monotonic()
@@ -35,6 +38,11 @@ class SessionMetrics:
                 "total": 0,
                 "checker": "",
             }
+            self.review_wall = self.review_wait = self.review_agent = 0.0
+        elif kind == "review_timing":
+            self.review_wall += float(data.get("wall_seconds", 0.0))
+            self.review_wait += float(data.get("waiting_seconds", 0.0))
+            self.review_agent += float(data.get("agent_seconds", 0.0))
         elif kind == "batch_queue" and self.batch is not None:
             self.batch.update(total=data["total"], checker=data["checker"])
         elif kind == "batch_progress":
@@ -146,7 +154,13 @@ class SessionMetrics:
         if self.batch:
             label += (
                 f" | {self.batch.get('done', 0)}/{self.batch.get('total', 0)}"
+                f" | {self.review_wall:.1f}s review"
             )
+            if detailed:
+                label += (
+                    f" (agent {self.review_agent:.1f}s,"
+                    f" wait {self.review_wait:.1f}s)"
+                )
         label += (
             f"\nIN {input_count}  OUT {output_count}"
             f"  CACHE {cached if cached is not None else '-'}"

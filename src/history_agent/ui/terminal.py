@@ -65,6 +65,7 @@ class TerminalUI:
         self.splitter: ThinkingText = ThinkingText(self.append)
         self.accounted: bool = False
         self.batch: dict[str, object] | None = None
+        self.review_wall: float = 0.0
 
     def welcome(self, context: int) -> None:
         self.console.print(
@@ -80,6 +81,7 @@ class TerminalUI:
             self.started = time.monotonic()
             self.state = "Starting request"
             self.batch = None
+            self.review_wall = 0.0
             self.step, self.context, self.output_chars = 0, 0, 0
             self.first_token, self.request_finished, self.usage = (
                 None,

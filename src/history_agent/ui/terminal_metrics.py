@@ -64,7 +64,8 @@ def footer(ui: terminal.TerminalUI) -> Panel:
             safe_text(
                 (
                     f"job {ui.batch['job_id']}  ·  {ui.batch['done']}/"
-                    f"{ui.batch['total']}  {ui.batch['checker']}"
+                    f"{ui.batch['total']}  {ui.batch['checker']}  ·  "
+                    f"{ui.review_wall:.1f}s review"
                 )
             ),
             style="yellow",

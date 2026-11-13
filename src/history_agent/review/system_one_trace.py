@@ -149,7 +149,10 @@ def cached_trace(records, target):
                     arguments.get("file"),
                     line,
                 )
-                cache[key] = source_lines(data, line)
+                lines = source_lines(data, line)
+                expected = set(range(max(1, line - 5), line + 6))
+                if expected <= {entry["number"] for entry in lines}:
+                    cache[key] = lines
 
     return warning, trace, cache
 

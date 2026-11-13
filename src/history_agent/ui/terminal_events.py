@@ -41,6 +41,7 @@ class TerminalPresenter:
             handler(kind, data)
 
     def handle_review_timing(self, kind, data):
+        self.ui.review_wall += float(data.get("wall_seconds", 0.0))
         self.ui.append(
             "tool", f"Review time: {data['agent_seconds']:.2f}s agent, "
             f"{data['waiting_seconds']:.2f}s user wait, "

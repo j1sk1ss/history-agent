@@ -23,6 +23,7 @@ from history_agent.review.system_one_context import (
 from history_agent.review.system_one_context import (
     warning_context as warning_context,
 )
+from history_agent.review.system_one_prompt import classifier_prompt
 from history_agent.runtime.tools import ToolClient
 from history_agent.tools.registry import ToolRegistry
 
@@ -56,7 +57,11 @@ class SystemOne:
         *,
         timeout: float | None = None,
     ) -> dict[str, object] | None:
-        if len(state.encode("utf-8")) > self.max_input_bytes:
+        evidence, instructions = classifier_prompt(state)
+        if (
+            len(evidence.encode()) + len(instructions.encode())
+            > self.max_input_bytes
+        ):
             return None
         try:
             with _request(
@@ -64,13 +69,11 @@ class SystemOne:
                 "",
                 {
                     "model": self.model,
-                    "state": state,
+                    "state": evidence,
                     "questions": {
                         "sentiment": {
                             "type": "choice",
-                            "instructions": Prompts.get(
-                                "system_one.instructions"
-                            ),
+                            "instructions": instructions,
                             "criteria": {
                                 key: Prompts.get("system_one." + key.lower())
                                 for key in STATUSES
@@ -117,6 +120,11 @@ class SystemOne:
             if isinstance(error, HTTPError):
                 error.close()
             return None
+
+    @staticmethod
+    def input_size(state: str) -> int:
+        evidence, instructions = classifier_prompt(state)
+        return len(evidence.encode()) + len(instructions.encode())
 
 
 class SystemOneRequest(StrictModel):
@@ -220,11 +228,14 @@ class SystemOneClient(ToolClient):
                     "warning_description": metadata.get("warning_description")
                     or "Assess the supplied code for a genuine defect.",
                     "tp_conditions": metadata.get("tp_conditions")
-                    or Prompts.get("system_one.tp"),
+                    or "",
                     "trace": metadata.get("trace", []),
                 }
             )
-            if len(state.encode()) > self.system_one.max_input_bytes:
+            if (
+                self.system_one.input_size(state)
+                > self.system_one.max_input_bytes
+            ):
                 data = {
                     "error": "Input budget exceeded; investigate manually."
                 }

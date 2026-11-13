@@ -49,7 +49,7 @@ class SetupTest(unittest.TestCase):
             ]
         )
 
-    def test_all_six_clients_round_trip_and_keep_unrelated_settings(self):
+    def test_all_clients_round_trip_and_keep_unrelated_settings(self):
         for client in CLIENTS:
             with self.subTest(client=client):
                 root = self.root / client
@@ -108,6 +108,54 @@ class SetupTest(unittest.TestCase):
                         self.assertEqual(data["other"], "keep")
                     self.assertEqual(edit.path.stat().st_mode & 0o777, 0o600)
                 self.assertEqual(write_plan(plan), ([], []))
+
+    def test_pi_setup_connects_only_the_history_mcp_server(self):
+        root = self.root / "pi"
+        args = parse_args(
+            [
+                "--client",
+                "pi",
+                "--history-url",
+                "https://history.example/deployment",
+                "--config-root",
+                str(root),
+            ]
+        )
+        plan = build_plan(args)
+        changed, _ = write_plan(plan)
+        self.assertEqual(
+            sorted(path.relative_to(root).as_posix() for path in changed),
+            [
+                ".local/share/history-agent/history.json",
+                ".pi/agent/mcp.json",
+            ],
+        )
+        server = read_data(root / ".pi/agent/mcp.json", "json")[
+            "mcpServers"
+        ]["history-mcp"]
+        self.assertEqual(server["args"][1:], ["--transport", "stdio"])
+        self.assertEqual(
+            server["env"]["HISTORY_CONFIG"], str(plan[0].path)
+        )
+
+    def test_model_url_is_required_except_for_pi(self):
+        for client in ("copilot", "codex"):
+            with self.subTest(client=client):
+                with self.assertRaisesRegex(
+                    ValueError, "--model-url is required"
+                ):
+                    build_plan(
+                        parse_args(
+                            [
+                                "--client",
+                                client,
+                                "--history-url",
+                                "https://history.example/deployment",
+                                "--config-root",
+                                str(self.root / client),
+                            ]
+                        )
+                    )
 
     def test_protocol_mismatch_stops_before_changes(self):
         for client, url in [

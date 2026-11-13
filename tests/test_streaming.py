@@ -485,6 +485,44 @@ class TerminalTest(unittest.TestCase):
         ui.console.print(ui.footer())
         self.assertIn("cache 128", output.getvalue())
 
+    def test_footer_shows_cumulative_review_time_during_batch(self):
+        ui, output = self.ui()
+        ui.event("batch_started", job_id="job1")
+        ui.event(
+            "batch_progress",
+            job_id="job1",
+            done=1,
+            total=2,
+            checker="A_CHECKER",
+            warning_id="a1",
+        )
+        ui.event(
+            "review_timing",
+            warning_id="a1",
+            status="completed",
+            route="agent",
+            wall_seconds=12.5,
+            waiting_seconds=5.0,
+            agent_seconds=7.5,
+        )
+        self.assertAlmostEqual(ui.review_wall, 12.5)
+        ui.console.print(ui.footer())
+        self.assertIn("1/2", output.getvalue())
+        self.assertIn("12.5s review", output.getvalue())
+        ui.event(
+            "review_timing",
+            warning_id="a2",
+            status="completed",
+            route="agent",
+            wall_seconds=3.25,
+            waiting_seconds=0.0,
+            agent_seconds=3.25,
+        )
+        output.truncate(0)
+        output.seek(0)
+        ui.console.print(ui.footer())
+        self.assertIn("15.8s review", output.getvalue())
+
     def test_split_think_tags_and_gray_reasoning_are_separate_from_answer(
         self,
     ):

@@ -43,8 +43,12 @@ def main(
     args = args or parse_args(argv)
     try:
         plan: list[Edit] = build_plan(args)
-        print(f"Client: {args.client}; model: {args.model}; API: {args.api}")
-        print(f"Model endpoint: {args.model_endpoint}")
+        model: str = (
+            "managed by pi" if args.client == "pi" else args.model
+        )
+        print(f"Client: {args.client}; model: {model}; API: {args.api or '-'}")
+        if args.model_endpoint:
+            print(f"Model endpoint: {args.model_endpoint}")
         print(f"History endpoint: {args.history_url}")
         if args.client == "claude-code":
             print(

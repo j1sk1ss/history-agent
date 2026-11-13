@@ -68,10 +68,17 @@ def warning_context(messages: list[dict[str, object]]) -> dict[str, str]:
     if not isinstance(checker, str) or not isinstance(description, str):
         return {}
     pages = articles.get(checker.casefold(), {})
+    parts = []
+    end = None
+    for offset in sorted(pages):
+        if end is not None and offset != end:
+            parts.append("\n")
+        parts.append(pages[offset])
+        end = offset + len(pages[offset])
     return {
         "checker_name": checker,
         "warning_description": (checker + ": " + description).strip(": "),
-        "tp_conditions": "\n".join(pages[offset] for offset in sorted(pages)),
+        "tp_conditions": "".join(parts),
     }
 
 

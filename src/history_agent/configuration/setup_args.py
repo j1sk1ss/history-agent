@@ -21,8 +21,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--model-url",
-        required=True,
-        help="Model API origin, versioned base URL, or full endpoint",
+        help="Model API origin, versioned base URL, or full endpoint; "
+        "required except for pi, which manages its own models",
     )
     parser.add_argument(
         "--history-url",

@@ -131,13 +131,13 @@ class SystemOneTest(unittest.IsolatedAsyncioTestCase):
                 "environment": "C; divisor is zero",
             })
         payload = request.call_args.args[2]
-        self.assertEqual(json.loads(payload["state"]), {
-            "code": "int value = 1 / divisor;",
-            "environment": "C; divisor is zero",
-            "warning_description": "Division by zero",
-            "tp_conditions": "The divisor evaluates to zero",
-            "trace": [],
-        })
+        self.assertIn("int value = 1 / divisor;", payload["state"])
+        self.assertIn("C; divisor is zero", payload["state"])
+        self.assertIn("Reported warning:\nDivision by zero", payload["state"])
+        instructions = payload["questions"]["sentiment"]["instructions"]
+        self.assertIn("Division by zero", instructions)
+        self.assertIn("The divisor evaluates to zero", instructions)
+        self.assertIn("Checker documentation", instructions)
         self.assertEqual(
             payload["questions"]["sentiment"]["criteria"], CRITERIA
         )
@@ -195,7 +195,7 @@ class SystemOneTest(unittest.IsolatedAsyncioTestCase):
         state = json.loads(classify.call_args.args[0])
         self.assertEqual(state["code"], "int a;")
         self.assertEqual(state["environment"], "")
-        self.assertEqual(state["tp_conditions"], CRITERIA["TP"])
+        self.assertEqual(state["tp_conditions"], "")
 
     async def test_first_call_loads_context_from_resolved_warning_link(self):
         class ContextClient(LocalClient):

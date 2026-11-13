@@ -7,6 +7,7 @@ CLIENTS: tuple[str, ...] = (
     "hermes",
     "claude-code",
     "codex",
+    "pi",
 )
 
 SERVER_NAME: str = "history-mcp"

@@ -270,17 +270,15 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(hint["confidence"], 0.69)
                     payload = request.call_args.args[2] if confidence else {}
                     if payload:
-                        self.assertIn("UNIQUE_A_RULE", payload["state"])
-                        state = json.loads(payload["state"])
-                        self.assertEqual(set(state), {
-                            "code", "environment", "warning_description",
-                            "tp_conditions",
-                            "trace",
-                        })
-                        self.assertEqual(
-                            state["warning_description"],
-                            "A_CHECKER: Synthetic finding a1",
+                        instructions = payload["questions"]["sentiment"][
+                            "instructions"
+                        ]
+                        self.assertIn("UNIQUE_A_RULE", instructions)
+                        self.assertIn(
+                            "A_CHECKER: Synthetic finding a1", instructions
                         )
+                        self.assertIn("Initial source code:", payload["state"])
+                        self.assertIn("Trace point 1", payload["state"])
                         self.assertNotIn("snapshot", payload["state"])
                         self.assertNotIn("project_id", payload["state"])
 
@@ -333,6 +331,80 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
                 await runner.run({"job_id": result["job_id"]}, write=True)
                 self.assertEqual(len(server.writes), 3)
 
+    async def test_rejected_verdict_auto_reloads_and_model_corrects_evidence(
+        self,
+    ):
+        class CorrectingVerdict(ReviewModel):
+            def complete(self, messages, tools, on_event=None):
+                verdict = super().complete(messages, tools, on_event)
+                if len(self.requests) == 1:
+                    return answer(json.dumps({
+                        "classification": "TP",
+                        "comment": "Invented path, corrected on reload",
+                        "evidence": [{
+                            "file": "src/unread.c",
+                            "line": 999,
+                            "snapshot_id": "snapshot",
+                        }],
+                    }))
+                self.corrected_prompt = messages[-1]["content"]
+                return verdict
+
+        with self.fixture() as server:
+            server.warnings = [warning("a1")]
+            history = HistoryClient(
+                Settings(server.url, "tester", "test-secret")
+            )
+            async with Client(create_server(history)) as client:
+                tools = (await client.list_tools()).tools
+                model = CorrectingVerdict()
+                events = []
+                runner = self.runner(
+                    history, client, tools, model, allow_write=True,
+                    on_event=lambda kind, **data: events.append((kind, data)),
+                )
+                result = await runner.run(SCOPE, write=True)
+        self.assertEqual(result["states"], {"saved": 1})
+        self.assertEqual(len(server.writes), 1)
+        self.assertEqual(len(model.requests), 2)
+        self.assertIn("rejected by host validation", model.corrected_prompt)
+        self.assertIn("src/unread.c", model.corrected_prompt)
+        self.assertTrue(
+            any(
+                kind == "notice" and "rejected verdict" in data["message"]
+                for kind, data in events
+            )
+        )
+
+    async def test_repeated_verdict_rejections_stop_after_two_auto_reloads(
+        self,
+    ):
+        with self.fixture() as server:
+            server.warnings = [warning("a1")]
+            history = HistoryClient(
+                Settings(server.url, "tester", "test-secret")
+            )
+            async with Client(create_server(history)) as client:
+                tools = (await client.list_tools()).tools
+                model = ReviewModel(
+                    verdict={
+                        "classification": "FP",
+                        "comment": "Invented evidence",
+                        "evidence": [{
+                            "file": "src/unread.c",
+                            "line": 999,
+                            "snapshot_id": "snapshot",
+                        }],
+                    }
+                )
+                runner = self.runner(
+                    history, client, tools, model, allow_write=True,
+                )
+                with self.assertRaisesRegex(ChatError, "not actually read"):
+                    await runner.run(SCOPE, write=True)
+        self.assertEqual(len(model.requests), 3)
+        self.assertFalse(server.writes)
+
     async def test_retry_rejected_evidence_receives_validation_feedback(self):
         with self.fixture() as server:
             server.warnings = [warning("a1")]
@@ -359,6 +431,7 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
                 )
                 with self.assertRaisesRegex(ChatError, "not actually read"):
                     await runner.run(SCOPE, write=True)
+                self.assertEqual(len(model.requests), 3)
                 self.assertFalse(server.writes)
                 model.verdict = None
                 result = await runner.run(
