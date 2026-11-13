@@ -13,6 +13,7 @@ TRANSPORTS = (
     "openai-compatible",
     "ollama",
     "llama",
+    "litellm",
     "deepseek",
     "openai-responses",
     "codex",

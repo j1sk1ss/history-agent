@@ -17,6 +17,7 @@ from history_agent.configuration.models import ModelCatalog
 PROVIDER_DEFAULTS: dict[str, str] = {
     "ollama": "http://127.0.0.1:11434/v1",
     "llama": "http://127.0.0.1:8000/v1",
+    "litellm": "http://127.0.0.1:4000/v1",
     "deepseek": "https://api.deepseek.com/v1",
     "openai-responses": "https://api.openai.com/v1",
     "codex": "https://api.openai.com/v1",
@@ -25,6 +26,7 @@ PROVIDER_DEFAULTS: dict[str, str] = {
     "gemini": "https://generativelanguage.googleapis.com/v1beta",
 }
 PROVIDER_KEYS: dict[str, str] = {
+    "litellm": "LITELLM_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
     "openai-responses": "OPENAI_API_KEY",
     "codex": "OPENAI_API_KEY",
@@ -32,8 +34,13 @@ PROVIDER_KEYS: dict[str, str] = {
     "claude": "ANTHROPIC_API_KEY",
     "gemini": "GEMINI_API_KEY",
 }
+# LiteLLM authentication is configured by the proxy administrator.
+REQUIRED_KEY_PROVIDERS: frozenset[str] = frozenset(PROVIDER_KEYS) - {"litellm"}
 PROVIDERS: tuple[str, ...] = ("openai-compatible", *PROVIDER_DEFAULTS)
 LOCAL_PROVIDERS: tuple[str, ...] = ("openai-compatible", "ollama", "llama")
+COMPATIBLE_PROVIDERS: tuple[str, ...] = (
+    *LOCAL_PROVIDERS, "deepseek", "litellm",
+)
 TEXT_FIELDS: tuple[str, ...] = (
     "prompts_file",
     "model_profile",

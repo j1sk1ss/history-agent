@@ -24,7 +24,7 @@ SESSION_OPTIONS: tuple[tuple[tuple[str, ...], dict[str, object]], ...] = (
             "default": "openai-compatible",
             "choices": PROVIDERS,
             "help": (
-                "Inference transport: OpenAI-compatible, "
+                "Inference transport: OpenAI-compatible (including LiteLLM), "
                 "Responses (Codex), Anthropic or Gemini"
             ),
         },
@@ -39,7 +39,12 @@ SESSION_OPTIONS: tuple[tuple[tuple[str, ...], dict[str, object]], ...] = (
     ),
     (
         ("--model",),
-        {"help": ("Model ID; auto-detected if /models lists exactly one")},
+        {
+            "help": (
+                "Model ID or LiteLLM alias; local endpoints can auto-detect "
+                "when /models lists exactly one"
+            )
+        },
     ),
     (
         ("--model-key-env",),

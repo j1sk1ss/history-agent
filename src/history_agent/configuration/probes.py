@@ -8,9 +8,11 @@ from argparse import Namespace
 
 from history_agent.configuration.connection import discover_model, valid_url
 from history_agent.configuration.defaults import (
+    COMPATIBLE_PROVIDERS,
     LOCAL_PROVIDERS,
     PROVIDER_DEFAULTS,
     PROVIDER_KEYS,
+    REQUIRED_KEY_PROVIDERS,
 )
 from history_agent.inference.model import ChatError, Model
 from history_agent.review.system_one import SystemOne
@@ -22,7 +24,7 @@ def probe_model_connection(args: Namespace) -> tuple[bool, str]:
         if not url:
             return False, "Enter the model URL."
         base = valid_url(url)
-        if args.provider in (*LOCAL_PROVIDERS, "deepseek"):
+        if args.provider in COMPATIBLE_PROVIDERS:
             if base.endswith(("/messages", "/responses")):
                 return False, (
                     "This provider requires a Chat Completions endpoint."
@@ -36,7 +38,7 @@ def probe_model_connection(args: Namespace) -> tuple[bool, str]:
             args.provider, "HISTORY_AGENT_MODEL_API_KEY"
         )
         key = os.environ.get(key_env)
-        if args.provider in PROVIDER_KEYS and not key:
+        if args.provider in REQUIRED_KEY_PROVIDERS and not key:
             return False, f"Set the API key in {key_env}."
         timeout = min(args.timeout, 5)
         name = args.model

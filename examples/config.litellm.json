@@ -1,0 +1,25 @@
+{
+  "model_profile": "litellm/reviewer",
+  "providers": {
+    "litellm": {
+      "transport": "litellm",
+      "base_url": "http://127.0.0.1:4000/v1",
+      "api_key_env": "LITELLM_API_KEY",
+      "models": {
+        "reviewer": {
+          "label": "LiteLLM reviewer",
+          "max_output_tokens": 4096,
+          "max_context_bytes": 131072,
+          "max_tool_result_bytes": 16384
+        },
+        "reviewer-fast": {
+          "label": "LiteLLM fast reviewer",
+          "max_output_tokens": 2048,
+          "max_context_bytes": 65536,
+          "max_tool_result_bytes": 16384
+        }
+      }
+    }
+  },
+  "allow_write": false
+}

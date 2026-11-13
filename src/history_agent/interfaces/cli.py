@@ -11,9 +11,11 @@ from mcp import Client
 
 from history_agent.configuration.connection import discover_model, valid_url
 from history_agent.configuration.defaults import (
+    COMPATIBLE_PROVIDERS,
     LOCAL_PROVIDERS,
     PROVIDER_DEFAULTS,
     PROVIDER_KEYS,
+    REQUIRED_KEY_PROVIDERS,
     load_defaults,
 )
 from history_agent.history.client import HistoryClient, Settings
@@ -61,7 +63,7 @@ async def run(
         raise ChatError(
             "Specify --model-url for an OpenAI-compatible inference server"
         )
-    if args.provider in (*LOCAL_PROVIDERS, "deepseek"):
+    if args.provider in COMPATIBLE_PROVIDERS:
         base: str = model_base(url)
     else:
         base = valid_url(url).rstrip("/")
@@ -71,7 +73,7 @@ async def run(
         args.provider, "HISTORY_AGENT_MODEL_API_KEY"
     )
     key: str | None = os.environ.get(env)
-    if args.provider in PROVIDER_KEYS and not key:
+    if args.provider in REQUIRED_KEY_PROVIDERS and not key:
         raise ChatError(f"{args.provider} requires an API key in {env}")
     if args.provider not in LOCAL_PROVIDERS:
         if not args.model:

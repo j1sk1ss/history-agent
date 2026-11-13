@@ -1,0 +1,19 @@
+# The agent sends model_name aliases, not the upstream provider/model IDs.
+# Export these variables before starting the proxy; see .env.example.
+model_list:
+  - model_name: reviewer
+    litellm_params:
+      model: os.environ/LITELLM_REVIEW_MODEL
+      api_key: os.environ/LITELLM_REVIEW_API_KEY
+  - model_name: reviewer-fast
+    litellm_params:
+      model: os.environ/LITELLM_FAST_MODEL
+      api_key: os.environ/LITELLM_FAST_API_KEY
+
+# Fail explicitly if an upstream model does not support required parameters,
+# including tool calling, rather than silently removing them.
+litellm_settings:
+  drop_params: false
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

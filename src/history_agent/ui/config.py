@@ -24,6 +24,7 @@ from textual.widgets import (
 
 from history_agent.configuration.defaults import (
     BOOL_FIELDS,
+    COMPATIBLE_PROVIDERS,
     LIMIT_FIELDS,
     LOCAL_PROVIDERS,
     PROVIDERS,
@@ -215,7 +216,7 @@ class ConfigurationScreen(ModelPicker, ConnectionChecks, ModalScreen):
             if args.provider not in LOCAL_PROVIDERS and not args.model:
                 raise ValueError("Enter a model ID for this provider")
             if (
-                args.provider in (*LOCAL_PROVIDERS, "deepseek")
+                args.provider in COMPATIBLE_PROVIDERS
                 and args.model_url
             ):
                 from history_agent.interfaces.cli import model_base

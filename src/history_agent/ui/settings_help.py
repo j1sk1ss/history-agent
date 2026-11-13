@@ -15,7 +15,7 @@ SETTINGS_HELP: dict[str, str] = {
     "provider": (
         "The model API protocol. For Qwen served by vLLM or LM Studio, "
         "choose openai-compatible; for llama-server, choose llama; "
-        "for Ollama, choose ollama."
+        "for Ollama, choose ollama; for LiteLLM Proxy, choose litellm."
     ),
     "model_url": (
         "The inference server URL, usually ending in /v1. This service "
@@ -23,7 +23,8 @@ SETTINGS_HELP: dict[str, str] = {
         "separately below."
     ),
     "model": (
-        "The model ID accepted by the inference server. For local servers, "
+        "The model ID accepted by the inference server, or model_name "
+        "alias configured in LiteLLM Proxy. For local servers, "
         "leave it empty to auto-detect when /models lists exactly one model."
     ),
     "history_url": (

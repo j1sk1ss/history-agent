@@ -40,7 +40,64 @@ HISTORY_AGENT_CONFIG=examples/config.json .venv/bin/python chat.py \
 
 Explicit CLI fields take precedence over the selected profile. Existing flat configurations continue to work. Compatible Chat Completions, native Responses, Anthropic Messages and Gemini are separate transports; select the transport matching the endpoint.
 
-Set `HISTORY_USER` and `HISTORY_PASSWORD`, or `HISTORY_SESSION`, if the history server requires authentication. Model API keys are read from environment variables: `HISTORY_AGENT_MODEL_API_KEY` for compatible endpoints, `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, or `OPENAI_API_KEY`.
+Set `HISTORY_USER` and `HISTORY_PASSWORD`, or `HISTORY_SESSION`, if the history server requires authentication. Model API keys are read from environment variables: `HISTORY_AGENT_MODEL_API_KEY` for compatible endpoints, `LITELLM_API_KEY` for LiteLLM, `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, or `OPENAI_API_KEY`.
+
+## LiteLLM models
+
+The `litellm` provider connects to a LiteLLM proxy through Chat Completions. It defaults to `http://127.0.0.1:4000/v1` and reads its optional proxy key from `LITELLM_API_KEY`. Select a model alias explicitly: the value must match `model_name` in the proxy configuration, including any slashes. Choose an upstream chat model that supports tool calling; LiteLLM support for a provider alone does not guarantee that every model supports tools. See the official [proxy configuration](https://docs.litellm.ai/docs/proxy/configs) and [tool calling](https://docs.litellm.ai/docs/completion/function_call) documentation.
+
+### Connect to an existing proxy
+
+Use the proxy URL, model alias and client key supplied for your deployment:
+
+```sh
+export LITELLM_API_KEY='replace-with-proxy-client-key'
+.venv/bin/python chat.py \
+  --provider litellm \
+  --model-url https://your-litellm-host.example/v1 \
+  --model reviewer \
+  --history-url http://127.0.0.1:8060
+```
+
+If the proxy allows unauthenticated requests, leave `LITELLM_API_KEY` unset. Use `--model-key-env YOUR_PROXY_KEY_VARIABLE` to select a different environment variable. The agent's key authenticates to the proxy; upstream provider keys belong in the proxy environment.
+
+[examples/config.litellm.json](examples/config.litellm.json) defines saved `litellm/reviewer` and `litellm/reviewer-fast` profiles. Update its `base_url` and model aliases for an existing deployment, then run:
+
+```sh
+HISTORY_AGENT_CONFIG=examples/config.litellm.json .venv/bin/python chat.py \
+  --model-profile litellm/reviewer \
+  --history-url http://127.0.0.1:8060
+```
+
+Choose `--model-profile litellm/reviewer-fast` to use the second model. This example starts with review writes disabled; enable them with `--allow-write` when needed. Its byte limits bound harness context, while `max_output_tokens` controls each completion's output budget. The `reviewer-fast` profile is an alternative main investigator; System 1 uses its separate `/v1/systemone` API.
+
+### Run a local proxy
+
+Install the optional proxy in its own environment. The agent connects over HTTP and does not need the LiteLLM Python SDK:
+
+```sh
+python3 -m venv .venv-litellm
+.venv-litellm/bin/python -m pip install 'litellm[proxy]'
+cp examples/.env.example .env
+```
+
+Edit `.env`: replace both upstream model IDs with LiteLLM `provider/model` IDs that support tool calling, supply the corresponding provider keys, and set a long random `LITELLM_MASTER_KEY` beginning with `sk-`. [examples/litellm.yaml](examples/litellm.yaml) reads these values from the environment and exposes the `reviewer` and `reviewer-fast` aliases. Providers that require extra settings, such as an API base, region or deployment version, also need those settings under their `litellm_params` entries.
+
+Load the edited file and start the proxy bound to localhost:
+
+```sh
+set -a
+. ./.env
+set +a
+.venv-litellm/bin/litellm \
+  --config examples/litellm.yaml \
+  --host 127.0.0.1 \
+  --port 4000
+```
+
+In a second shell, load `.env` with the same three shell commands, then run the saved-profile command above. The agent does not load `.env` automatically. This local proxy uses `LITELLM_MASTER_KEY` for authentication, and the example assigns the same value to the agent's separate `LITELLM_API_KEY` variable. An existing proxy can issue a different inference key for the agent. Keep your edited `.env` local; the repository ignores it.
+
+Streaming and token usage use the existing compatible transport. `--no-stream` and `--no-stream-usage` remain available for deployments that need them. Configure provider-specific reasoning options at the proxy; `--no-thinking` is reserved for local chat-template servers. The proxy example keeps `drop_params` disabled so an unsupported required parameter causes an explicit error. See the official [CLI quick start](https://docs.litellm.ai/docs/proxy/quick_start) and [request parameter reference](https://docs.litellm.ai/docs/completion/input).
 
 ## Review pipeline
 
