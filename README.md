@@ -42,6 +42,8 @@ Explicit CLI fields take precedence over the selected profile. Existing flat con
 
 Set `HISTORY_USER` and `HISTORY_PASSWORD`, or `HISTORY_SESSION`, if the history server requires authentication. Model API keys are read from environment variables: `HISTORY_AGENT_MODEL_API_KEY` for compatible endpoints, `LITELLM_API_KEY` for LiteLLM, `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, or `OPENAI_API_KEY`.
 
+History action schemas are loaded from `actions_agent`, with compatibility for servers advertising the older `agent_actions` catalog. `actions_userfriendly` is the server's human-readable catalog. Discovery exposes server parameter bounds, defaults, session requirements and constraints. Snapshot arguments in `/batch`, `/review` and `/diff` accept `HEAD`; the host pins concrete snapshots before creating a review queue and keeps them on resume. See the [History API reference](src/history_agent/skills/history-review/references/agent-api.md).
+
 ## LiteLLM models
 
 The `litellm` provider connects to a LiteLLM proxy through Chat Completions. It defaults to `http://127.0.0.1:4000/v1` and reads its optional proxy key from `LITELLM_API_KEY`. Select a model alias explicitly: the value must match `model_name` in the proxy configuration, including any slashes. Choose an upstream chat model that supports tool calling; LiteLLM support for a provider alone does not guarantee that every model supports tools. See the official [proxy configuration](https://docs.litellm.ai/docs/proxy/configs) and [tool calling](https://docs.litellm.ai/docs/completion/function_call) documentation.
@@ -60,6 +62,8 @@ export LITELLM_API_KEY='replace-with-proxy-client-key'
 ```
 
 If the proxy allows unauthenticated requests, leave `LITELLM_API_KEY` unset. Use `--model-key-env YOUR_PROXY_KEY_VARIABLE` to select a different environment variable. The agent's key authenticates to the proxy; upstream provider keys belong in the proxy environment.
+
+The connection indicator checks generation with `POST /v1/chat/completions`; `GET /v1/models` only lists models. The check uses **Timeout** from **Advanced** settings and shows request failures below the indicator, including HTTP status, timeout or TLS errors. The API key field takes an environment variable name, such as `LITELLM_API_KEY`, whose value must be available to the running agent.
 
 [examples/config.litellm.json](examples/config.litellm.json) defines saved `litellm/reviewer` and `litellm/reviewer-fast` profiles. Update its `base_url` and model aliases for an existing deployment, then run:
 

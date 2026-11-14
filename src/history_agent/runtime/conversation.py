@@ -224,6 +224,7 @@ class Conversation(ConversationSummary):
                     write = write or journal.get("write")
                 finally:
                     journal.close()
+            arguments = await self.router.pin_snapshots(arguments)
             summary = await self.runner.run(arguments, write=write)
             self.retain_summary(summary)
             text: str = compact(

@@ -32,6 +32,7 @@ HELP: str = """Commands (Tab completes names; ↑/↓ recall this session's inpu
                                       Review a difference (default: appeared)
   /resume JOB_ID                      Resume a saved batch (Tab completes IDs)
   /quit                               Exit (/quite also works)
+Snapshot arguments accept HEAD; reviews pin it before starting.
 Validated batch reviews are saved immediately in live mode.
 Use --read-only to keep results local."""
 

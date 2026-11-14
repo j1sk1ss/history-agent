@@ -145,6 +145,7 @@ class LiteLLMTest(unittest.IsolatedAsyncioTestCase):
             ):
                 connected, _ = probe_model_connection(parse_args([
                     "--provider", "litellm", "--model", "team/reviewer",
+                    "--timeout", "45",
                     *options,
                 ]))
             self.assertTrue(connected)
@@ -154,7 +155,15 @@ class LiteLLMTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(model.name, "team/reviewer")
             self.assertEqual(model.key, key)
             self.assertFalse(model.stream)
-            self.assertLessEqual(model.timeout, 5)
+            self.assertEqual(model.timeout, 45)
+
+    def test_probe_payload_does_not_send_empty_tools_to_proxy(self):
+        model = Model("https://proxy.example/v1", "team/reviewer",
+                      provider="litellm", stream=False)
+        payload = model.payload([{"role": "user", "content": "Reply OK."}], [])
+        self.assertNotIn("tools", payload)
+        self.assertNotIn("stream_options", payload)
+        self.assertFalse(payload["stream"])
 
     async def test_alias_is_required_without_local_model_discovery(self):
         args = parse_args(["--provider", "litellm"])

@@ -1,10 +1,17 @@
 # History API for review agents
 
 These actions extend `/history/api?act=...`. Existing actions and response shapes
-are unchanged. `get_actions` includes all actions; authenticated `agent_actions`
-provides input JSON Schemas, parameter placement, read/write flags and limits.
+are unchanged. `get_actions` includes all actions. `actions_agent` provides input
+JSON Schemas, parameter placement, read/write flags, `session_required` and
+per-parameter `constraints`. `actions_userfriendly` provides descriptions and
+human-readable parameter help without schemas. The Python adapter prefers
+`actions_agent` and uses `agent_actions` when only that older name is advertised.
+`history_discover(action=...)` exposes the selected schema and available session
+and constraint metadata. Numeric bounds and defaults come from the server.
 Extension responses are `{"status":"OK","data":...}`; errors use the existing
-HTTP 400 / `status: ERROR` envelope. All actions require a valid history session.
+HTTP 400 / `status: ERROR` envelope. The catalog declares which actions require
+a valid history session. Configured credentials/session are handled by the
+adapter's transport.
 
 | Action | Purpose |
 |---|---|
@@ -14,14 +21,17 @@ HTTP 400 / `status: ERROR` envelope. All actions require a valid history session
 | `agent_source` | Read bounded, numbered source lines from a snapshot |
 | `agent_resolve_symbol` | Follow DXR definition, declaration or usage links |
 | `agent_set_review` | Save TP / FP / WF / UC / UD with an explanation |
-| `agent_actions` | Discover extension contracts |
+| `actions_agent` | Discover extension schemas and constraints |
+| `actions_userfriendly` | Describe extension actions and parameters |
 
 ## Find warnings by checker name
 
-GET parameters: required `project_id`, `stream_id`, concrete `snapshot_id`,
+GET parameters: required `project_id`, `stream_id`, `snapshot_id`,
 `checker_name`; optional `match` (`exact`, default, or `contains`), `offset`
-(default 0) and `limit` (default 20, maximum 100). `HEAD` is rejected: resolve
-the desired analysis with `get_snapshots` first. Name matching ignores case;
+(default 0) and `limit` (default 20, maximum 100). `snapshot_id` accepts an ID
+or `HEAD` for the latest snapshot in the explicit branch. Pin a concrete ID
+before paging or investigating warnings so later reads use the same analysis.
+Name matching ignores case;
 names are checker types such as `DEREF_OF_NULL`, not warning IDs or message text.
 
 Filtering happens before pagination. Results are ordered by source file, line
@@ -48,7 +58,9 @@ Example arguments:
 
 `agent_compare_warnings` accepts GET `project_id`, `stream_id`, `snapshot_id`
 (current) and `base_snapshot_id`. Optional `base_project_id` / `base_stream_id`
-default to the current side. Both snapshots must be concrete; HEAD is rejected.
+default to the current side. Either snapshot can be `HEAD` for the latest
+snapshot in that side's project and branch. The returned `current` and `base`
+identify the resolved snapshots; use concrete IDs for subsequent pages.
 `subset` defaults to `appeared`; alternatives are `disappeared` and `both`.
 Optional `checker_name` is an exact, case-insensitive filter before pagination.
 `offset` defaults to 0; `limit` defaults to 20 and is at most 100.
@@ -71,10 +83,14 @@ On older servers the Python adapter exposes the same action by adapting
 fields and resolving checker IDs. It downloads the complete legacy comparison
 outside the model context before filtering/paging; the 2 MiB HTTP response limit
 still applies. Rebuild the server for native pagination on large comparisons.
+This legacy fallback requires concrete snapshot IDs.
 
 The microharness additionally discovers local `review_diff` through its three
 tools. It accepts the comparison scope, subset (default `appeared`), optional
 `checker_name`, `instructions` and `overwrite`, or only `job_id` for resume.
+Current and base snapshots may be IDs or `HEAD`; the host resolves `HEAD` through
+`get_snapshots(number=1)` for each project/branch before creating the job. Review
+queues and resumed jobs always use those pinned concrete snapshots.
 `history_read` generates proposals; authorized `history_write` saves them.
 Every warning gets a fresh context with its exact checker guide and source on
 the selected side. Checkpoints pin both sides, subset, mode, endpoint and model;
@@ -98,7 +114,7 @@ found by `agent_find_warnings`, but have no invented catalog description.
 
 ## Source, navigation and review
 
-`agent_source` requires `project_id`, concrete `snapshot_id`, `file` and one-based
+`agent_source` requires `project_id`, `snapshot_id`, `file` and one-based
 `line`. `before` and `after` default to 10; the total window is at most 200 lines
 and 65536 characters. The response identifies the source hash and encoding,
 contains numbered `lines`, and indicates continuation through `has_more` /
@@ -108,6 +124,10 @@ contains numbered `lines`, and indicates continuation through `has_more` /
 `declaration`, `usage`), `offset` (default 0) and `limit` (default 20, max 100).
 It requires DXR data. Overlapping tokens remain separate candidates; token group
 IDs are strings and target pagination applies to each candidate independently.
+The one-based `column` input differs from zero-based offsets in `get_tokens`.
+`file` is a path in the snapshot, not a server filesystem path. Review source
+and symbol reads use the concrete snapshot pinned for the warning, honoring
+`snapshot_override` on each location.
 
 `agent_set_review` requires GET `project_id`, explicit `stream_id`, `warning_id`
 and POST `classification`, `comment`. A non-empty explanation is mandatory.

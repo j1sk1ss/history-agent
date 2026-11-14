@@ -1,8 +1,40 @@
-"""Translate the legacy action catalog into validation schemas."""
+"""Translate legacy and extension catalogs into validation schemas."""
 
 from __future__ import annotations
 
+import copy
+
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
+
 from history_agent.contracts import ActionMetadata
+from history_agent.history.constants import READ_ACTIONS
+from history_agent.history.settings import HistoryError
+
+
+def extension_action(name: str, metadata: dict[str, object]) -> ActionMetadata:
+    try:
+        schema: dict[str, object] = copy.deepcopy(metadata["input_schema"])
+        if not isinstance(schema, dict):
+            raise ValueError("Expected an object input schema")
+        Draft202012Validator.check_schema(schema)
+        if schema.get("type") != "object" or not isinstance(
+            schema.get("properties"), dict
+        ):
+            raise ValueError("Expected an object input schema")
+        schema["additionalProperties"] = False
+        return ActionMetadata(
+            name=name,
+            description=metadata["description"],
+            input_schema=schema,
+            read_only=name in READ_ACTIONS,
+            session_required=metadata.get("session_required"),
+            constraints=metadata.get("constraints"),
+        )
+    except (KeyError, TypeError, ValueError, SchemaError):
+        raise HistoryError(
+            "History returned invalid extension metadata for " + name
+        ) from None
 
 
 def legacy_action(name: str, metadata: dict[str, object]) -> ActionMetadata:

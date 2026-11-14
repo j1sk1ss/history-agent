@@ -16,6 +16,7 @@ class ConnectionProbeTest(unittest.TestCase):
         args = parse_args([
             "--model-url", "https://model.example/v1/chat/completions",
             "--model", "selected-model", "--model-key-env", "TEST_MODEL_KEY",
+            "--timeout", "45",
         ])
         with (
             patch.dict(os.environ, {"TEST_MODEL_KEY": "test-key"}),
@@ -30,7 +31,7 @@ class ConnectionProbeTest(unittest.TestCase):
         self.assertEqual(model.base, "https://model.example/v1")
         self.assertEqual(model.name, "selected-model")
         self.assertEqual(model.key, "test-key")
-        self.assertLessEqual(model.timeout, 5)
+        self.assertEqual(model.timeout, 45)
 
     def test_rejected_main_model_is_not_reported_as_connected(self):
         args = parse_args([
@@ -43,6 +44,18 @@ class ConnectionProbeTest(unittest.TestCase):
         self.assertFalse(connected)
         self.assertEqual(detail, "Not found")
 
+    def test_key_value_in_environment_name_field_is_not_echoed_or_sent(self):
+        args = parse_args([
+            "--provider", "litellm", "--model", "team/reviewer",
+            "--model-key-env", "sk-private-token",
+        ])
+        with patch.object(Model, "complete") as complete:
+            connected, detail = probe_model_connection(args)
+        self.assertFalse(connected)
+        self.assertIn("environment variable name", detail)
+        self.assertNotIn("sk-private-token", detail)
+        complete.assert_not_called()
+
     def test_local_model_is_discovered_with_a_short_timeout(self):
         args = parse_args(["--model-url", "https://model.example"])
         with patch(
@@ -54,6 +67,7 @@ class ConnectionProbeTest(unittest.TestCase):
             connected, _ = probe_model_connection(args)
         self.assertTrue(connected)
         self.assertEqual(complete.call_args.args[0].name, "only-model")
+        self.assertEqual(complete.call_args.args[0].timeout, args.timeout)
         self.assertEqual(discover.call_args.kwargs["timeout"], 5)
 
     def test_remote_provider_keeps_its_transport(self):

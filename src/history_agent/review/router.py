@@ -11,7 +11,10 @@ from pydantic import ValidationError
 
 from history_agent.contracts import ActionDefinition
 from history_agent.history.client import HistoryError
-from history_agent.history.current import resolve_current
+from history_agent.history.current import (
+    resolve_current,
+    resolve_snapshot_references,
+)
 from history_agent.history.links import find_history_urls
 from history_agent.inference.model import ChatError, compact
 from history_agent.review.actions import BATCH_REVIEW, DIFFERENCE_REVIEW
@@ -176,4 +179,16 @@ class BatchRouter(ToolClient):
             )
             values = {**defaults["scope"], **values}
 
-        return values
+        return await self.pin_snapshots(values)
+
+    async def pin_snapshots(
+        self, values: dict[str, object],
+    ) -> dict[str, object]:
+        if "job_id" in values:
+            return values
+        return await asyncio.to_thread(
+            resolve_snapshot_references,
+            self.runner.history.execute,
+            values,
+            HistoryError,
+        )

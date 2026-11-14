@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import copy
 import threading
 from _thread import RLock
-
-from jsonschema import Draft202012Validator
 
 from history_agent.contracts import ActionMetadata
 from history_agent.history.actions import (
@@ -14,13 +11,14 @@ from history_agent.history.actions import (
     LOCAL_ACTIONS,
     LOCAL_REQUESTS,
 )
-from history_agent.history.catalog import legacy_action
+from history_agent.history.catalog import extension_action, legacy_action
 from history_agent.history.comparison import legacy_compare
 from history_agent.history.constants import (
     COMPARE_ACTION,
     CURRENT_ACTION,
     DOC_ACTION,
     READ_ACTIONS,
+    SCHEMA_CATALOG_ACTIONS,
     URL_ACTION,
     WRITE_ACTIONS,
 )
@@ -68,26 +66,23 @@ class HistoryClient:
         catalog: dict[str, ActionMetadata] = {
             name: legacy_action(name, metadata)
             for name, metadata in legacy.items()
-            if name in READ_ACTIONS
+            if name in READ_ACTIONS and not name.startswith("agent_")
         }
-        if "agent_actions" in legacy:
-            extension: dict[str, dict[str, object]] = (
-                self._call("agent_actions").get("data", {}).get("actions", {})
-            )
-            for name, metadata in extension.items():
+        catalog_action: str | None = next(
+            (name for name in SCHEMA_CATALOG_ACTIONS if name in legacy), None
+        )
+        if catalog_action:
+            data: object = self._call(catalog_action).get("data")
+            if not isinstance(data, dict) or not isinstance(
+                data.get("actions"), dict
+            ):
+                raise HistoryError(
+                    f"History {catalog_action} returned an invalid catalog"
+                )
+            for name, metadata in data["actions"].items():
                 if name not in READ_ACTIONS | WRITE_ACTIONS:
                     continue
-                schema: dict[str, object] = copy.deepcopy(
-                    metadata["input_schema"]
-                )
-                schema["additionalProperties"] = False
-                Draft202012Validator.check_schema(schema)
-                catalog[name] = ActionMetadata(
-                    name=name,
-                    description=metadata["description"],
-                    input_schema=schema,
-                    read_only=name in READ_ACTIONS,
-                )
+                catalog[name] = extension_action(name, metadata)
         for definition in LOCAL_ACTIONS:
             catalog[definition.name] = definition.metadata()
         if (
@@ -107,7 +102,7 @@ class HistoryClient:
                     raise HistoryError(
                         "Action is unavailable through this adapter: " + action
                     )
-                return catalog[action].model_dump()
+                return catalog[action].model_dump(exclude_none=True)
             return {
                 "actions": [
                     {

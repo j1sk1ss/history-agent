@@ -176,3 +176,23 @@ def resolve_current(
     args: dict[str, str | int], error_type: type[Exception],
 ) -> dict[str, object]:
     return CurrentScope(execute, error_type).resolve(args)
+
+
+def resolve_snapshot_references(
+    execute: Callable[[str, dict[str, object]], dict[str, object]],
+    values: dict[str, object], error_type: type[Exception],
+) -> dict[str, object]:
+    """Pin HEAD once per project/branch before creating a review job."""
+    result: dict[str, object] = dict(values)
+    snapshots: dict[tuple[int, str], str] = {}
+    resolver: CurrentScope = CurrentScope(execute, error_type)
+    for prefix in ("", "base_"):
+        if values.get(prefix + "snapshot_id") != "HEAD":
+            continue
+        project: int = values.get(prefix + "project_id", values["project_id"])
+        branch: str = values.get(prefix + "stream_id", values["stream_id"])
+        key: tuple[int, str] = (project, branch)
+        if key not in snapshots:
+            snapshots[key] = resolver.snapshot(project, branch)
+        result[prefix + "snapshot_id"] = snapshots[key]
+    return result

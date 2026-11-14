@@ -11,7 +11,7 @@ from history_agent.interfaces.cli import parse_args
 from history_agent.interfaces.mcp import create_server
 from history_agent.runtime.session import converse
 from tests.fake_history import FakeHistory
-from tests.test_batch import ReviewModel, warning
+from tests.test_batch import HTML, ReviewModel, warning
 from tests.test_chat import FakeModel, answer
 
 
@@ -62,6 +62,37 @@ class ReloadTest(unittest.IsolatedAsyncioTestCase):
                         client, model, args, history, ui_override=ui
                     )
                 return ui, copy.deepcopy(history_server.writes)
+
+    async def test_cli_and_slash_reviews_resolve_head_before_running(self):
+        cases = (
+            (["--batch", "0", "master", "HEAD"], ["/quit"]),
+            (["--diff", "0", "master", "HEAD", "base"], ["/quit"]),
+            ([], ["/batch 0 master HEAD", "/quit"]),
+            ([], ["/diff 0 master HEAD base", "/quit"]),
+            ([], ["/review 0 master HEAD a1", "/quit"]),
+        )
+        for options, commands in cases:
+            with self.subTest(options=options, commands=commands):
+                server = FakeHistory()
+                server.warnings = [warning("a1")]
+                server.guide_html = HTML
+                server.comparison_warnings["appeared"] = server.warnings
+                server.snapshots[(0, "master")] = [
+                    {"snapshot_id": "snapshot"}
+                ]
+                model = ReviewModel()
+                ui, writes = await self.run_session(
+                    model, commands, ["--read-only", *options], server,
+                )
+                self.assertEqual(ui.errors, [])
+                self.assertFalse(writes)
+                self.assertEqual(len(model.requests), 1)
+                sources = [r for r in server.requests
+                           if r["action"] == "agent_source"]
+                self.assertTrue(sources)
+                self.assertTrue(all(
+                    r["query"]["snapshot_id"] == "snapshot" for r in sources
+                ))
 
     async def test_reload_retries_startup_prompt_with_fresh_context(self):
         model = FakeModel(ChatError("Unavailable"), answer("Recovered"))

@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -144,6 +145,83 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
         ]
         server.guide_html = HTML
         return server
+
+    async def test_head_difference_pins_scopes_and_resume_keeps_them(self):
+        for subset in ("appeared", "disappeared", "both"):
+            with self.subTest(subset=subset), self.fixture() as server:
+                server.warnings = [warning("a1")]
+                server.comparison_warnings[subset] = server.warnings
+                server.snapshots = {
+                    (0, "master"): [{"snapshot_id": "snapshot"}],
+                    (7, "release"): [{"snapshot_id": "baseline"}],
+                }
+                selected = {
+                    "project_id": 7, "stream_id": "release",
+                    "snapshot_id": "baseline",
+                } if subset == "disappeared" else SCOPE
+                history = HistoryClient(
+                    Settings(server.url, "tester", "test-secret")
+                )
+                async with Client(create_server(history)) as client:
+                    model = ReviewModel(verdict={
+                        "classification": "TP", "comment": "src/a1.c:3",
+                        "evidence": [{
+                            "file": "src/a1.c", "line": 3,
+                            "snapshot_id": selected["snapshot_id"],
+                        }],
+                    })
+                    runner = self.runner(
+                        history, client, (await client.list_tools()).tools,
+                        model, allow_write=True,
+                    )
+                    router = BatchRouter(client, runner)
+                    response = await router.call_tool("history_write", {
+                        "action": "review_diff", "arguments": {
+                            **SCOPE, "snapshot_id": "HEAD",
+                            "base_project_id": 7, "base_stream_id": "release",
+                            "base_snapshot_id": "HEAD", "subset": subset,
+                        },
+                    })
+                    result = json.loads(response.content[0].text)
+                    self.assertEqual(result["states"], {"saved": 1})
+                    with closing(Journal(self.root, result["job_id"])) as job:
+                        self.assertEqual(job.get("scope"), selected)
+                        self.assertEqual(
+                            job.get("comparison")["current"], SCOPE
+                        )
+                        self.assertEqual(
+                            job.get("comparison")["base"]["snapshot_id"],
+                            "baseline",
+                        )
+                    writes = server.writes
+                    self.assertEqual(writes[0]["project_id"], str(
+                        selected["project_id"]
+                    ))
+                    self.assertEqual(
+                        writes[0]["stream_id"], selected["stream_id"]
+                    )
+                    pinned = [r for r in server.requests if r["action"] in (
+                        "agent_compare_warnings", "agent_source",
+                    )]
+                    self.assertTrue(pinned)
+                    self.assertTrue(all(
+                        r["query"]["snapshot_id"] != "HEAD" for r in pinned
+                    ))
+                    requests_before = len(server.requests)
+                    server.snapshots = {
+                        key: [{"snapshot_id": "new-head"}]
+                        for key in server.snapshots
+                    }
+                    await router.call_tool("history_write", {
+                        "action": "review_diff",
+                        "arguments": {"job_id": result["job_id"]},
+                    })
+                    resumed = server.requests[requests_before:]
+                    self.assertNotIn("get_snapshots", [
+                        r["action"] for r in resumed
+                    ])
+                    self.assertEqual(len(server.writes), 1)
+                    self.assertEqual(len(model.requests), 1)
 
     async def test_scope_error_auto_reloads_and_model_corrects_the_read(self):
         class CorrectingModel(ReviewModel):

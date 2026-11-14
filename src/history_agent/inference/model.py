@@ -9,7 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from history_agent.http import NoRedirects
-from history_agent.inference.common import ChatError, compact
+from history_agent.inference.common import ChatError, compact, request_failure
 from history_agent.inference.stream import read_completion
 
 
@@ -67,12 +67,8 @@ class Model:
             if isinstance(error, urllib.error.HTTPError):
                 error.close()
             raise ChatError(
-                (
-                    "Model request failed or stream was interrupted; "
-                    "check endpoint/authentication/timeout. No "
-                    "automatic retry; no tools from this response "
-                    "were executed."
-                )
+                request_failure(error) + " No automatic retry; no tools "
+                "from this response were executed."
             ) from None
         except (ValueError, UnicodeError, KeyError, TypeError, AttributeError):
             raise ChatError(
@@ -89,10 +85,11 @@ class Model:
         payload: dict[str, object] = {
             "model": self.name,
             "messages": messages,
-            "tools": tools,
             "max_tokens": self.max_output_tokens,
             "stream": self.stream,
         }
+        if tools:
+            payload["tools"] = tools
         if self.stream and self.stream_usage:
             payload["stream_options"] = {"include_usage": True}
         if self.no_thinking:

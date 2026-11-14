@@ -17,6 +17,16 @@ SnapshotId: TypeAlias = Annotated[
     ),
 ]
 
+SnapshotReference: TypeAlias = Annotated[
+    str,
+    Field(
+        min_length=1,
+        description=(
+            "Snapshot ID or HEAD for the latest in the specified branch"
+        ),
+    ),
+]
+
 
 class CurrentRequest(StrictModel):
     project_id: int | None = Field(default=None, ge=0)
@@ -37,7 +47,7 @@ class CheckerDocumentationRequest(StrictModel):
 class ComparisonOptions(StrictModel):
     base_project_id: int | None = Field(default=None, ge=0)
     base_stream_id: str | None = Field(default=None, min_length=1)
-    base_snapshot_id: SnapshotId | None = None
+    base_snapshot_id: SnapshotReference | None = None
     subset: Literal["appeared", "disappeared", "both"] = "appeared"
 
     @model_validator(mode="after")

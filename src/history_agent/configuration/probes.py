@@ -37,17 +37,21 @@ def probe_model_connection(args: Namespace) -> tuple[bool, str]:
         key_env = args.model_key_env or PROVIDER_KEYS.get(
             args.provider, "HISTORY_AGENT_MODEL_API_KEY"
         )
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key_env):
+            return False, (
+                "Enter an API key environment variable name, such as "
+                "LITELLM_API_KEY, instead of the key itself."
+            )
         key = os.environ.get(key_env)
         if args.provider in REQUIRED_KEY_PROVIDERS and not key:
             return False, f"Set the API key in {key_env}."
-        timeout = min(args.timeout, 5)
         name = args.model
         if not name and args.provider in LOCAL_PROVIDERS:
-            name = discover_model(base, key_env, timeout=timeout)
+            name = discover_model(base, key_env, timeout=min(args.timeout, 5))
         if not name:
             return False, "Enter the model ID."
         model = Model(
-            base, name, key, timeout, max_output_tokens=32,
+            base, name, key, args.timeout, max_output_tokens=32,
             no_thinking=args.no_thinking and args.provider in LOCAL_PROVIDERS,
             stream=False, stream_usage=False, provider=args.provider,
         )

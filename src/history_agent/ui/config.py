@@ -76,6 +76,7 @@ class ConfigurationScreen(ModelPicker, ConnectionChecks, ModalScreen):
                     "[dim]■ System 1: checking…[/]", id="system-one-status"
                 )
                 yield Button("Check", id="check-connections")
+            yield Static("", id="model-connection-error", markup=False)
             yield from self.model_picker()
             yield Label("Provider")
             yield Select(

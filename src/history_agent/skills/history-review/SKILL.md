@@ -99,6 +99,8 @@ message telling the model to forget old data does not remove it from the prompt.
 For a snapshot comparison or a request to annotate only new warnings, discover
 `agent_compare_warnings`. Specify `snapshot_id` as current (UI First) and
 `base_snapshot_id` as baseline (UI Second), with explicit project and branch.
+The native API accepts `HEAD` on either side. Local `review_diff` resolves these
+references to concrete IDs before starting and preserves them on resume.
 Use `subset="appeared"` by default; `disappeared` selects baseline-only warnings
 and `both` selects matched current warnings. Apply `checker_name` before paging
 when a particular checker is requested. Use the same comparator as the UI;

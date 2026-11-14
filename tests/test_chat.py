@@ -412,7 +412,7 @@ class ModelHTTPTest(unittest.TestCase):
             env={**os.environ, "HISTORY_CONFIG": ""},
         )
         self.assertEqual(process.returncode, 1)
-        self.assertIn("Model request failed", process.stderr)
+        self.assertIn("Model API returned HTTP 401", process.stderr)
         self.assertNotIn("Traceback", process.stderr)
         self.assertEqual(len(self.requests), 1)
 

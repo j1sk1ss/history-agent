@@ -1,11 +1,12 @@
 """Live connection indicators for the settings form."""
 
 import asyncio
+import math
 from copy import copy
 
 from textual import on
 from textual.message_pump import MessagePump
-from textual.widgets import Button, Input, Select, Static
+from textual.widgets import Button, Checkbox, Input, Select, Static
 from textual.widgets.select import NoSelection
 
 from history_agent.configuration.defaults import (
@@ -42,6 +43,7 @@ class ConnectionChecks(MessagePump):
             "model_key_env",
             "system_one_url",
             "system_one_model",
+            "timeout",
         ):
             self.schedule_connection_check()
 
@@ -51,6 +53,7 @@ class ConnectionChecks(MessagePump):
         self.connection_revision += 1
         if self.connection_timer:
             self.connection_timer.stop()
+        self.query_one("#model-connection-error", Static).update("")
         for name, label in (("model", "Model"), ("system-one", "System 1")):
             self.query_one("#" + name + "-status", Static).update(
                 f"[dim]■ {label}: checking…[/]"
@@ -86,6 +89,19 @@ class ConnectionChecks(MessagePump):
                 name,
                 self.query_one("#" + name, Input).value.strip() or None,
             )
+        try:
+            args.timeout = float(self.query_one("#timeout", Input).value)
+            if not math.isfinite(args.timeout) or args.timeout <= 0:
+                raise ValueError()
+        except ValueError:
+            self.query_one("#model-status", Static).update(
+                "[red]■[/] Model: invalid timeout"
+            )
+            self.query_one("#model-connection-error", Static).update(
+                "Timeout must be a positive number."
+            )
+            return
+        args.no_thinking = self.query_one("#no_thinking", Checkbox).value
         results = await asyncio.gather(
             asyncio.to_thread(config.probe_model_connection, args),
             asyncio.to_thread(config.probe_system_one_connection, args),
@@ -103,3 +119,7 @@ class ConnectionChecks(MessagePump):
             widget = self.query_one("#" + name + "-status", Static)
             widget.update(f"[{color}]■[/] {label}: {state}")
             widget.tooltip = detail
+            if name == "model":
+                self.query_one("#model-connection-error", Static).update(
+                    "" if connected else detail
+                )

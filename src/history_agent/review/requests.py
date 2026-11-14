@@ -3,7 +3,11 @@
 from pydantic import Field, RootModel, model_validator
 
 from history_agent.contracts import StrictModel
-from history_agent.history.requests import ComparisonOptions, SnapshotId
+from history_agent.history.requests import (
+    ComparisonOptions,
+    SnapshotId,
+    SnapshotReference,
+)
 
 
 class ResumeRequest(StrictModel):
@@ -13,7 +17,7 @@ class ResumeRequest(StrictModel):
 class BatchSelection(ComparisonOptions):
     project_id: int | None = Field(default=None, ge=0)
     stream_id: str | None = Field(default=None, min_length=1)
-    snapshot_id: SnapshotId | None = None
+    snapshot_id: SnapshotReference | None = None
     checker_name: str | None = Field(default=None, min_length=1)
     warning_id: str | None = Field(default=None, min_length=1, max_length=200)
     instructions: str = Field(default="", max_length=8000)
@@ -32,10 +36,14 @@ class BatchRequest(BatchSelection):
     project_id: int = Field(ge=0)
     stream_id: str = Field(min_length=1)
     snapshot_id: SnapshotId
+    base_snapshot_id: SnapshotId | None = None
 
 
-class DifferenceRequest(BatchRequest):
-    base_snapshot_id: SnapshotId
+class DifferenceSelection(BatchSelection):
+    project_id: int = Field(ge=0)
+    stream_id: str = Field(min_length=1)
+    snapshot_id: SnapshotReference
+    base_snapshot_id: SnapshotReference
 
 
 class BatchCommand(RootModel[BatchSelection | ResumeRequest]):
@@ -46,5 +54,5 @@ class ResolvedBatchCommand(RootModel[BatchRequest | ResumeRequest]):
     """Runner command requires a concrete scope before creating a job."""
 
 
-class DifferenceCommand(RootModel[DifferenceRequest | ResumeRequest]):
-    """Difference reviews require explicit current and base snapshots."""
+class DifferenceCommand(RootModel[DifferenceSelection | ResumeRequest]):
+    """Difference reviews accept concrete snapshots or branch HEADs."""

@@ -2,7 +2,8 @@
 
 BATCH_DESCRIPTION: str = (
     "Review all warnings with fresh per-warning model context, grouped "
-    "by checker. Missing project/branch/snapshot defaults to "
+    "by checker. HEAD is pinned before starting. "
+    "Missing project/branch/snapshot defaults to "
     "history_current (alphabetical project/branch, first snapshot); URL "
     "scopes must be passed explicitly. The session save setting controls "
     "immediate server writes, including when called through "
@@ -15,7 +16,8 @@ BATCH_DESCRIPTION: str = (
 
 DIFF_DESCRIPTION: str = (
     "Review only a snapshot difference in isolated resumable contexts. "
-    "Requires current and base snapshots; default appeared (UI First). "
+    "Requires current and base snapshots (IDs or HEAD, pinned before "
+    "starting); default appeared (UI First). "
     "disappeared (UI Second) uses baseline source and baseline review "
     "branch. both uses current source. Disappearance is not proof of "
     "FP/fix. The session save setting controls immediate server writes, "

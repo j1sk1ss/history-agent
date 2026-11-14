@@ -24,7 +24,7 @@ from history_agent.review.requests import (
     BatchRequest,
     BatchSelection,
     DifferenceCommand,
-    DifferenceRequest,
+    DifferenceSelection,
     ResolvedBatchCommand,
     ResumeRequest,
 )
@@ -128,15 +128,30 @@ class RequestModelsTest(unittest.TestCase):
     def test_difference_requires_both_snapshots(self) -> None:
         with self.assertRaises(ValidationError):
             DifferenceCommand.model_validate(SCOPE)
-        request: DifferenceRequest = DifferenceCommand.model_validate(
+        request: DifferenceSelection = DifferenceCommand.model_validate(
             {
                 **SCOPE,
                 "base_snapshot_id": "base",
             }
         ).root
-        self.assertIsInstance(request, DifferenceRequest)
+        self.assertIsInstance(request, DifferenceSelection)
         self.assertEqual(request.subset, "appeared")
         self.assertEqual(request.base_snapshot_id, "base")
+
+    def test_public_reviews_accept_head_before_runner_scope_resolution(self):
+        batch = BatchCommand.model_validate({"snapshot_id": "HEAD"}).root
+        self.assertEqual(batch.snapshot_id, "HEAD")
+        arguments = {
+            **SCOPE, "snapshot_id": "HEAD", "base_snapshot_id": "HEAD",
+        }
+        difference = DifferenceCommand.model_validate(arguments).root
+        self.assertEqual(difference.snapshot_id, "HEAD")
+        self.assertEqual(difference.base_snapshot_id, "HEAD")
+        self.assertTrue(Draft202012Validator(
+            DifferenceCommand.model_json_schema()
+        ).is_valid(arguments))
+        with self.assertRaises(ValidationError):
+            ResolvedBatchCommand.model_validate(arguments)
 
     def test_comparison_options_require_a_base_snapshot(self) -> None:
         for fields in (

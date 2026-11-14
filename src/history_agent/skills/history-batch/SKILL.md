@@ -5,8 +5,11 @@ description: Bulk review, resumability and write safeguards.
 
 # Review a project
 
-Discover `review_batch` through `history_discover(action="review_batch")`. With no user-specified
-project/snapshot and no link, call `history_read(action="review_batch", arguments={})` to
+Discover `review_batch` through `history_discover(action="review_batch")`.
+Snapshot arguments accept `HEAD`; the host pins it to a concrete snapshot before
+creating the job, including both sides of a comparison.
+With no user-specified project/snapshot and no link, call
+`history_read(action="review_batch", arguments={})` to
 propose reviews or `history_write(action="review_batch", arguments={})` to save when authorized.
 The host uses `current`; it does not need model-driven project/snapshot discovery.
 When a URL is supplied, pass its resolved `review_arguments` explicitly.

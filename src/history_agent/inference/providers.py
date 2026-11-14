@@ -7,6 +7,7 @@ import urllib.error
 from collections.abc import Callable
 
 from history_agent.inference.anthropic import anthropic
+from history_agent.inference.common import request_failure
 from history_agent.inference.gemini import gemini
 from history_agent.inference.model import ChatError, Model
 from history_agent.inference.responses import responses
@@ -30,8 +31,7 @@ def complete_native(
         if isinstance(error, urllib.error.HTTPError):
             error.close()
         raise ChatError(
-            "Model request failed; check provider URL, API key, model and"
-            " protocol. No tools executed."
+            request_failure(error) + " No tools executed."
         ) from None
     except (ValueError, UnicodeError, KeyError, TypeError, AttributeError):
         raise ChatError(

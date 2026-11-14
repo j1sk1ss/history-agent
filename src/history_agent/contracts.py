@@ -16,6 +16,8 @@ class ActionMetadata(StrictModel):
     description: str
     read_only: bool
     input_schema: dict[str, object]
+    session_required: bool | None = None
+    constraints: dict[str, str] | None = None
 
 
 class ActionDefinition(StrictModel):

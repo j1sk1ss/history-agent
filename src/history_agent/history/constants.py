@@ -8,6 +8,8 @@ COMPARE_ACTION: str = "agent_compare_warnings"
 
 DOC_ACTION: str = "agent_checker_documentation"
 
+SCHEMA_CATALOG_ACTIONS: tuple[str, ...] = ("actions_agent", "agent_actions")
+
 READ_ACTIONS: frozenset[str] = frozenset(
     {
         "whoami",

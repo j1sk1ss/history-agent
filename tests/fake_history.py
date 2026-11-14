@@ -10,10 +10,23 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
 ADDRESS = {
-    "project_id": {"type": "integer", "minimum": 0},
+    "project_id": {
+        "type": "integer", "minimum": 0, "maximum": 9223372036854775807
+    },
     "snapshot_id": {"type": "string", "minLength": 1},
     "file": {"type": "string", "minLength": 1},
-    "line": {"type": "integer", "minimum": 1},
+    "line": {"type": "integer", "minimum": 1, "maximum": 2147483647},
+}
+SCOPE = {
+    "project_id": ADDRESS["project_id"],
+    "stream_id": {"type": "string", "minLength": 1},
+    "snapshot_id": ADDRESS["snapshot_id"],
+}
+PAGING = {
+    "offset": {
+        "type": "integer", "minimum": 0, "maximum": 2147483647, "default": 0
+    },
+    "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
 }
 
 
@@ -32,6 +45,26 @@ def action_schema(properties, required, post=()):
 
 
 EXTENSION = {
+    "agent_compare_warnings": {
+        "description": "Compare current and base snapshots; HEAD is allowed.",
+        "read_only": True,
+        "input_schema": action_schema(
+            {
+                **SCOPE,
+                "base_project_id": ADDRESS["project_id"],
+                "base_stream_id": SCOPE["stream_id"],
+                "base_snapshot_id": ADDRESS["snapshot_id"],
+                "subset": {
+                    "type": "string",
+                    "enum": ["appeared", "disappeared", "both"],
+                    "default": "appeared",
+                },
+                "checker_name": {"type": "string", "minLength": 1},
+                **PAGING,
+            },
+            (*SCOPE, "base_snapshot_id"),
+        ),
+    },
     "agent_find_warnings": {
         "description": "Find warnings by checker name.",
         "read_only": True,
@@ -71,10 +104,34 @@ EXTENSION = {
         "input_schema": action_schema(
             {
                 **ADDRESS,
-                "before": {"type": "integer", "minimum": 0, "default": 10},
-                "after": {"type": "integer", "minimum": 0, "default": 10},
+                "before": {
+                    "type": "integer", "minimum": 0, "maximum": 199,
+                    "default": 10,
+                },
+                "after": {
+                    "type": "integer", "minimum": 0, "maximum": 199,
+                    "default": 10,
+                },
             },
             ADDRESS,
+        ),
+    },
+    "agent_resolve_symbol": {
+        "description": "Follow DXR links at a one based line and column.",
+        "read_only": True,
+        "input_schema": action_schema(
+            {
+                **ADDRESS,
+                "column": {
+                    "type": "integer", "minimum": 1, "maximum": 2147483647,
+                },
+                "relation": {
+                    "type": "string",
+                    "enum": ["definition", "declaration", "usage"],
+                },
+                **PAGING,
+            },
+            (*ADDRESS, "column", "relation"),
         ),
     },
     "agent_set_review": {
@@ -102,6 +159,15 @@ EXTENSION = {
         ),
     },
 }
+for metadata in EXTENSION.values():
+    metadata["session_required"] = True
+    metadata["constraints"] = {}
+EXTENSION["agent_source"]["constraints"] = {
+    "before": (
+        "Lines before the address; total window must be at most 200 lines"
+    ),
+    "after": "Lines after the address; total window must be at most 200 lines",
+}
 
 
 def legacy_parameters(*names, post=(), required=("project_id", "path")):
@@ -116,7 +182,8 @@ def legacy_parameters(*names, post=(), required=("project_id", "path")):
 
 
 LEGACY = {
-    "agent_actions": {"desc": "Extension schemas", "params": {}},
+    "actions_agent": {"desc": "Extension schemas", "params": {}},
+    "actions_userfriendly": {"desc": "Extension descriptions", "params": {}},
     "get_projects": {"desc": "List project groups", "params": {}},
     "get_project_group_info": {
         "desc": "Projects in a group",
@@ -197,9 +264,12 @@ class FakeHistory:
         self.guide_html = None
         self.guide_requests = []
         self.warnings = []
+        self.comparison_warnings = {}
+        self.snapshots = {}
         self.reviews = {}
         self.apply_disconnected_write = True
         self.extension = copy.deepcopy(EXTENSION)
+        self.legacy = copy.deepcopy(LEGACY)
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -282,9 +352,23 @@ class FakeHistory:
                     )
                     return
                 if action == "get_actions":
-                    result = {"actions": LEGACY}
-                elif action == "agent_actions":
-                    result = {"data": {"actions": owner.extension}}
+                    result = {"actions": owner.legacy}
+                elif action in ("actions_agent", "agent_actions"):
+                    if action not in owner.legacy:
+                        self.send_json(
+                            {"status": "ERROR", "error": "Unknown action"},
+                            400,
+                        )
+                        return
+                    result = {
+                        "data": {
+                            "api_version": 1,
+                            "transport": "history-http",
+                            "endpoint": "/history/api",
+                            "action_parameter": "act",
+                            "actions": owner.extension,
+                        }
+                    }
                 elif action == "get_projects":
                     result = {
                         "project_groups": [
@@ -318,10 +402,13 @@ class FakeHistory:
                     }
                 elif action == "get_snapshots":
                     result = {
-                        "snapshots": [
-                            {"snapshot_id": "snapshot-first"},
-                            {"snapshot_id": "snapshot-second"},
-                        ]
+                        "snapshots": owner.snapshots.get(
+                            (int(query["project_id"]), query["stream_id"]),
+                            [
+                                {"snapshot_id": "snapshot-first"},
+                                {"snapshot_id": "snapshot-second"},
+                            ],
+                        )
                     }
                 elif action == "agent_source":
                     result = {
@@ -366,6 +453,40 @@ class FakeHistory:
                     if data["has_more"]:
                         data["next_offset"] = offset + limit
                     result = {"data": data}
+                elif action == "agent_compare_warnings":
+                    current = {key: query[key] for key in SCOPE}
+                    current["project_id"] = int(current["project_id"])
+                    base = {
+                        key: query.get("base_" + key, value)
+                        for key, value in current.items()
+                    }
+                    base["project_id"] = int(base["project_id"])
+                    for scope in (current, base):
+                        if scope["snapshot_id"] == "HEAD":
+                            scope["snapshot_id"] = "snapshot-first"
+                    subset = query.get("subset", "appeared")
+                    found = owner.comparison_warnings.get(subset, [])
+                    if query.get("checker_name"):
+                        found = [
+                            warning for warning in found
+                            if warning["checker_name"].casefold()
+                            == query["checker_name"].casefold()
+                        ]
+                    offset, limit = int(query["offset"]), int(query["limit"])
+                    data = {
+                        "current": current, "base": base, "subset": subset,
+                        "scope": base if subset == "disappeared" else current,
+                        "warnings": found[offset:offset + limit],
+                        "total": len(found), "offset": offset, "limit": limit,
+                        "has_more": offset + limit < len(found),
+                    }
+                    if data["has_more"]:
+                        data["next_offset"] = offset + limit
+                    result = {"data": data}
+                elif action == "agent_resolve_symbol":
+                    result = {
+                        "data": {"matches": [], "total": 0, "has_more": False}
+                    }
                 elif action == "get_value_filter":
                     if query["field"] == "warn_types":
                         result = {

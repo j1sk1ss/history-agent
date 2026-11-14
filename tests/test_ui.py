@@ -476,6 +476,44 @@ class ConfigurationInterfaceTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(app.return_value["settings"].model, "new-model")
             self.assertEqual(load_defaults()["model"], "new-model")
 
+    async def test_visible_connection_error_and_timeout_change_rechecks(self):
+        app = ConfigurationApp(parse_args(["--timeout", "45"]))
+        detail = "HTTP 401: check API key [proxy-token]"
+        with patch(
+            "history_agent.ui.config.probe_model_connection",
+            return_value=(False, detail),
+        ) as probe:
+            async with app.run_test(size=(100, 60)) as pilot:
+                await pilot.click("#check-connections")
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+                error = app.screen.query_one("#model-connection-error", Static)
+                self.assertEqual(str(error.render()), detail)
+                self.assertTrue(error.display)
+                self.assertGreater(error.region.height, 0)
+                self.assertEqual(probe.call_args.args[0].timeout, 45)
+                probe.reset_mock()
+                app.screen.query_one("#timeout", Input).value = "17.5"
+                await pilot.pause(0.5)
+                await app.workers.wait_for_complete()
+                self.assertTrue(probe.called)
+                self.assertEqual(probe.call_args.args[0].timeout, 17.5)
+                probe.return_value = True, "Main model answered"
+                await pilot.click("#check-connections")
+                await app.workers.wait_for_complete()
+                self.assertEqual(str(error.content), "")
+                probe.reset_mock()
+                for value in ("0", "nan", "invalid"):
+                    with self.subTest(timeout=value):
+                        app.screen.query_one("#timeout", Input).value = value
+                        await pilot.pause(0.5)
+                        await app.workers.wait_for_complete()
+                        self.assertIn(
+                            "Timeout must be a positive number",
+                            str(error.content),
+                        )
+                        probe.assert_not_called()
+
     async def test_credentials_and_hover_descriptions(self):
         app = ConfigurationApp(parse_args([]))
         async with app.run_test(size=(100, 60)) as pilot:

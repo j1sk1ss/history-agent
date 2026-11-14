@@ -160,7 +160,8 @@ class ClientTest(unittest.TestCase):
         def without_extension(action, *args, **kwargs):
             result = original(action, *args, **kwargs)
             if action == "get_actions":
-                result["actions"].pop("agent_actions")
+                result["actions"].pop("actions_agent")
+                result["actions"].pop("actions_userfriendly")
             return result
 
         with patch.object(self.client, "_call", side_effect=without_extension):
@@ -171,6 +172,9 @@ class ClientTest(unittest.TestCase):
             self.assertNotIn(
                 "agent_set_review",
                 [item["name"] for item in catalog["actions"]],
+            )
+            self.assertNotIn(
+                "agent_source", [item["name"] for item in catalog["actions"]]
             )
 
     def test_credential_urls_and_incomplete_credentials_are_rejected(self):
