@@ -1,36 +1,48 @@
 """Select models and edit provider connections using form fields."""
 
 from copy import deepcopy
+from pathlib import Path
 
 from textual import on
-from textual.containers import Horizontal, VerticalScroll
+from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
 from textual.message_pump import MessagePump
 from textual.screen import ModalScreen
-from textual.widgets import Button, Checkbox, Input, Label, Select, Static
+from textual.widgets import Button, Checkbox, Input, Select, Static
 
+from history_agent.configuration.credentials import provider_api_key
 from history_agent.configuration.defaults import LOCAL_PROVIDERS, PROVIDERS
 from history_agent.configuration.models import ModelCatalog
+from history_agent.ui.config_fields import SettingsField, SettingsGroup
 
 
 class ModelPicker(MessagePump):
     def model_picker(self):
-        yield Label("Saved model")
-        yield Select(
-            [("Manual connection", ""), *ModelCatalog.choices(self.providers)],
-            value=self.args.model_profile or "",
-            allow_blank=False,
-            id="model_profile",
+        yield SettingsField(
+            "Saved model",
+            Select(
+                [
+                    ("Manual connection", ""),
+                    *ModelCatalog.choices(self.providers),
+                ],
+                value=self.args.model_profile or "",
+                allow_blank=False,
+                id="model_profile",
+            ),
         )
-        with Horizontal():
-            yield Button("Add model", id="add-model")
-            yield Button("Edit model", id="edit-model")
-            yield Button("Remove model", id="remove-model")
+        with Grid(classes="model-buttons settings-row"):
+            yield Button("Add", id="add-model")
+            yield Button("Edit", id="edit-model")
+            yield Button("Remove", id="remove-model")
 
     @on(Select.Changed, "#model_profile")
     def profile_changed(self, event):
         if not event.value or not isinstance(event.value, str):
             return
         values = ModelCatalog.select(self.providers, event.value)
+        values["model_api_key"] = provider_api_key(
+            values["provider"], values["model_api_key"],
+            values.pop("model_key_env"),
+        )
         self.query_one("#provider", Select).value = values.pop("provider")
         if self.query_one("#provider", Select).value not in LOCAL_PROVIDERS:
             self.query_one("#no_thinking", Checkbox).value = False
@@ -87,8 +99,9 @@ class ModelPicker(MessagePump):
         connection.update(
             transport=args.provider,
             base_url=args.model_url,
-            api_key_env=args.model_key_env,
+            api_key=args.model_api_key,
         )
+        connection.pop("api_key_env", None)
         options = connection["models"][model]
         for field in (
             "max_output_tokens",
@@ -109,13 +122,7 @@ class ModelPicker(MessagePump):
 
 class ModelEditor(ModalScreen):
     BINDINGS = [("escape", "cancel", "Cancel")]
-    DEFAULT_CSS = """
-    ModelEditor { align: center middle; background: #101010; }
-    ModelEditor VerticalScroll { width: 72; max-width: 100%; height: auto;
-        max-height: 100%; padding: 1 3; }
-    ModelEditor Horizontal { height: auto; margin-top: 1; }
-    ModelEditor #model-editor-error { color: red; height: auto; }
-    """
+    CSS_PATH = Path(__file__).with_name("config.tcss")
 
     def __init__(self, providers, reference):
         super().__init__()
@@ -129,33 +136,52 @@ class ModelEditor(ModalScreen):
             if self.reference
             else {}
         )
-        with VerticalScroll():
-            yield Static("Model connection")
-            for name, label, value in (
-                ("connection_name", "Connection name", provider),
-                ("model_id", "Model ID", model),
-                (
-                    "connection_url",
-                    "API base URL",
-                    values.get("model_url", ""),
-                ),
-                (
-                    "key_env",
-                    "API key environment variable",
-                    values.get("model_key_env", ""),
-                ),
-            ):
-                yield Label(label)
-                yield Input(value or "", id=name)
-            yield Label("API protocol")
-            yield Select(
-                [(name, name) for name in PROVIDERS],
-                value=values.get("provider", "openai-compatible"),
-                allow_blank=False,
-                id="connection_transport",
-            )
+        key = provider_api_key(
+            values["provider"], values.get("model_api_key"),
+            values.get("model_key_env"),
+        ) if self.reference else ""
+        with Vertical(classes="settings-dialog"):
+            yield Static("Model connection", classes="dialog-title")
+            with VerticalScroll(classes="settings-body"):
+                with SettingsGroup("Connection"):
+                    yield SettingsField(
+                        "Connection name",
+                        Input(
+                            provider,
+                            id="connection_name",
+                        ),
+                    )
+                    yield SettingsField(
+                        "API protocol",
+                        Select(
+                            [(name, name) for name in PROVIDERS],
+                            value=values.get("provider", "openai-compatible"),
+                            allow_blank=False,
+                            id="connection_transport",
+                        ),
+                    )
+                    yield SettingsField(
+                        "API base URL",
+                        Input(
+                            values.get("model_url") or "",
+                            id="connection_url",
+                        ),
+                    )
+                    yield SettingsField(
+                        "API key",
+                        Input(
+                            key or "",
+                            password=True,
+                            id="connection_api_key",
+                            placeholder="Paste API key; empty if not required",
+                        ),
+                    )
+                with SettingsGroup("Model"):
+                    yield SettingsField(
+                        "Model ID", Input(model, id="model_id")
+                    )
             yield Static("", id="model-editor-error", markup=False)
-            with Horizontal():
+            with Horizontal(classes="settings-actions"):
                 yield Button("Apply", id="apply-model", variant="primary")
                 yield Button("Cancel", id="cancel-model")
 
@@ -172,8 +198,9 @@ class ModelEditor(ModalScreen):
                 "base_url": self.query_one(
                     "#connection_url", Input
                 ).value.strip(),
-                "api_key_env": self.query_one("#key_env", Input).value.strip()
-                or None,
+                "api_key": self.query_one(
+                    "#connection_api_key", Input
+                ).value.strip(),
                 "models": {**previous, model: previous.get(model, {})},
             }
             updated = {**deepcopy(self.providers), name: values}

@@ -5,6 +5,10 @@ description: Source, trace and symbol navigation with precise snapshot provenanc
 
 # Inspect code
 
+In model tool calls, `*_id`, `snapshot_override`, `hash`, `mti` and `token_group` contain host names such as `diana`, `max` and `chloe`. Copy returned names exactly; the host resolves real server IDs. Never invent names or submit raw IDs. `HEAD` remains a snapshot selector. Names remain valid across reloads in this session.
+
+After a tool error the harness reloads context and supplies the error. Correct the failed request using its schema and existing names. Re-read missing schemas/source as needed; do not replay successful writes. If a write outcome is uncertain, inspect review history before retrying.
+
 Pin concrete `project_id`, `stream_id`, `snapshot_id` from `history_current` or resolved URL.
 Obtain `checker_name` and read `agent_checker_info.documentation.text` before source or trace.
 Read `agent_source` with small before/after windows and preserve returned line numbers.

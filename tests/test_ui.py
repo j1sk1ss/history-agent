@@ -20,6 +20,7 @@ from history_agent.interfaces.cli import parse_args
 from history_agent.review.jobs import job_lock
 from history_agent.ui.app import HistoryApp
 from history_agent.ui.config import ConfigurationApp, ConfigurationScreen
+from history_agent.ui.config_fields import SettingsField
 from history_agent.ui.formatting import pretty, tool_preview
 from history_agent.ui.jobs import UnfinishedJobs
 from history_agent.ui.metrics import SessionMetrics
@@ -509,7 +510,7 @@ class ConfigurationInterfaceTest(unittest.IsolatedAsyncioTestCase):
                         await pilot.pause(0.5)
                         await app.workers.wait_for_complete()
                         self.assertIn(
-                            "Timeout must be a positive number",
+                            "must be positive numbers",
                             str(error.content),
                         )
                         probe.assert_not_called()
@@ -526,6 +527,14 @@ class ConfigurationInterfaceTest(unittest.IsolatedAsyncioTestCase):
             )
             password = app.screen.query_one("#history_password", Input)
             self.assertTrue(password.password)
+            for name in ("model-settings", "history-settings"):
+                fields = list(app.screen.query_one("#" + name).query(
+                    SettingsField
+                ))
+                for previous, current in zip(fields, fields[1:]):
+                    self.assertGreater(
+                        current.region.y, previous.region.bottom
+                    )
             for widget in app.screen.query("Input, Select, Checkbox"):
                 self.assertTrue(widget.tooltip, widget.id)
             checkbox = app.screen.query_one("#no_patterns", Checkbox)
@@ -541,16 +550,21 @@ class ConfigurationInterfaceTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
 
     async def test_settings_actions_stay_visible_in_small_terminal(self):
-        app = ConfigurationApp(parse_args([]))
-        async with app.run_test(size=(80, 24)) as pilot:
-            viewport = app.screen.query_one("#settings", VerticalScroll)
-            self.assertGreater(viewport.max_scroll_y, 0)
-            save = app.screen.query_one("#save", Button)
-            self.assertGreaterEqual(save.region.y, 0)
-            self.assertLessEqual(save.region.bottom, 24)
-            viewport.scroll_end(animate=False, immediate=True)
-            await pilot.pause()
-            self.assertLessEqual(save.region.bottom, 24)
+        for size in ((40, 20), (80, 24)):
+            with self.subTest(size=size):
+                app = ConfigurationApp(parse_args([]))
+                async with app.run_test(size=size) as pilot:
+                    viewport = app.screen.query_one(
+                        "#settings", VerticalScroll
+                    )
+                    self.assertGreater(viewport.max_scroll_y, 0)
+                    self.assertEqual(viewport.max_scroll_x, 0)
+                    save = app.screen.query_one("#save", Button)
+                    self.assertGreaterEqual(save.region.y, 0)
+                    self.assertLessEqual(save.region.bottom, size[1])
+                    viewport.scroll_end(animate=False, immediate=True)
+                    await pilot.pause()
+                    self.assertLessEqual(save.region.bottom, size[1])
 
     async def test_save_preserves_transient_cli_request(
         self,
@@ -590,8 +604,11 @@ class ConfigurationInterfaceTest(unittest.IsolatedAsyncioTestCase):
             app.screen.query_one("#provider", Select).value = "deepseek"
             await pilot.pause()
             self.assertEqual(
-                app.screen.query_one("#model_key_env", Input).placeholder,
-                "DEEPSEEK_API_KEY",
+                app.screen.query_one("#model_url", Input).placeholder,
+                "https://api.deepseek.com/v1",
+            )
+            self.assertTrue(
+                app.screen.query_one("#model_api_key", Input).password
             )
             self.assertEqual(
                 app.screen.query_one("#model_url", Input).value, ""

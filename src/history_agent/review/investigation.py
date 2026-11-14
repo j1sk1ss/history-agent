@@ -77,7 +77,9 @@ class Investigation(ReviewPrefetch):
                 feedback = prompts.SCOPE_RETRY.format(
                     error=str(error),
                     scope=compact(self.client.scope),
-                    snapshots=compact(sorted(self.client.snapshots)),
+                    snapshots=compact({
+                        "snapshot_id": sorted(self.client.snapshots),
+                    }),
                 )
                 self.on_event(
                     "notice", message=(

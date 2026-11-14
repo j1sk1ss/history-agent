@@ -5,6 +5,10 @@ description: Investigate and classify Svace warnings through the shared history 
 
 # Review a warning
 
+In model tool calls, `*_id`, `snapshot_override`, `hash`, `mti` and `token_group` contain host names such as `diana`, `max` and `chloe`. Copy returned names exactly; the host resolves real server IDs. Never invent names or submit raw IDs. `HEAD` remains a snapshot selector. Names remain valid across reloads in this session.
+
+After a tool error the harness reloads context and supplies the error. Correct the failed request using its schema and existing names. Re-read missing schemas/source as needed; do not replay successful writes. If a write outcome is uncertain, inspect review history before retrying.
+
 Keep user-facing replies brief unless the user explicitly asks for a detailed
 report. Give the classification, a short reason and the key source location for
 one warning; for a batch, summarize results, important uncertainties and whether
@@ -32,7 +36,7 @@ discovery. The host deterministically selects the alphabetically first project
 and branch and the first returned concrete snapshot. **Do not** manually search
 for the latest snapshot, enumerate projects in model context or guess an ID.
 Pass an explicit `project_id`, `project_name` or `stream_id` to the resolver when
-known. A local single-project server may default to project 0.
+known. The host handles local single-project server defaults.
 
 Get the warning metadata with `get_warning` to identify the exact checker.
 Read checker documentation before `agent_source`, navigation or trace, then
@@ -90,7 +94,7 @@ pattern. On subsequent warnings, use that checklist to focus the investigation;
 verify every condition against the current warning's code and trace before
 deciding. A matching checker name or previous classification is insufficient.
 
-Return the job ID and short counts, including skipped/conflicting items. Resume
+Return the job name and short counts, including skipped/conflicting items. Resume
 using `job_id` with the original mode and scope. The runner checks uncertain
 writes before proceeding and never blindly repeats them. Other MCP clients may
 use their own context-reset/checkpoint features with the same separation; a

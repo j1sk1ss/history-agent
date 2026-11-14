@@ -10,6 +10,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from history_agent.configuration.credentials import resolve_api_key
+
 
 def valid_url(value: str) -> str:
     url: urllib.parse.SplitResult = urllib.parse.urlsplit(value)
@@ -23,7 +25,7 @@ def valid_url(value: str) -> str:
     ):
         raise ValueError(
             "Use an HTTP(S) URL without credentials, query or fragment; "
-            "put credentials in environment variables"
+            "enter credentials separately"
         )
     return value.rstrip("/")
 
@@ -122,11 +124,11 @@ class NoRedirects(urllib.request.HTTPRedirectHandler):
 
 
 def discover_model(
-    base: str, key_env: str, api: str = "chat-completions",
-    *, timeout: float = 15,
+    base: str, key_env: str | None = None, api: str = "chat-completions",
+    *, api_key: str | None = None, timeout: float = 15,
 ) -> str:
     headers: dict[str, str] = {"Accept": "application/json"}
-    key: str | None = os.environ.get(key_env)
+    key: str | None = resolve_api_key(api_key, key_env)
     if api == "messages":
         headers["anthropic-version"] = "2023-06-01"
         if key:

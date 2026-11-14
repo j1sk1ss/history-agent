@@ -14,8 +14,10 @@ from history_agent.inference.responses import responses
 
 
 def complete_native(
-    model: Model, messages: list[dict[str, object]],
-    tools: list[dict[str, object]], emit: Callable[..., None],
+    model: Model,
+    messages: list[dict[str, object]],
+    tools: list[dict[str, object]],
+    emit: Callable[..., None],
 ) -> dict[str, object]:
     try:
         if model.provider in ("anthropic", "claude"):
@@ -28,11 +30,10 @@ def complete_native(
         urllib.error.URLError,
         http.client.HTTPException,
     ) as error:
+        detail = request_failure(error)
         if isinstance(error, urllib.error.HTTPError):
             error.close()
-        raise ChatError(
-            request_failure(error) + " No tools executed."
-        ) from None
+        raise ChatError(detail + " No tools executed.") from None
     except (ValueError, UnicodeError, KeyError, TypeError, AttributeError):
         raise ChatError(
             "Provider returned invalid JSON or tool calls; no tools executed"

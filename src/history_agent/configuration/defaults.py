@@ -5,12 +5,24 @@ from __future__ import annotations
 import json
 import math
 import os
-import re
 from argparse import Namespace
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from history_agent.configuration.capabilities import CapabilitySettings
 from history_agent.configuration.connection import valid_url
+from history_agent.configuration.credentials import (
+    PROVIDER_KEYS as PROVIDER_KEYS,
+)
+from history_agent.configuration.credentials import (
+    REQUIRED_KEY_PROVIDERS as REQUIRED_KEY_PROVIDERS,
+)
+from history_agent.configuration.credentials import (
+    model_api_key,
+    validate_key,
+    validate_key_env,
+)
 from history_agent.configuration.files import private_write
 from history_agent.configuration.models import ModelCatalog
 
@@ -25,17 +37,6 @@ PROVIDER_DEFAULTS: dict[str, str] = {
     "claude": "https://api.anthropic.com/v1",
     "gemini": "https://generativelanguage.googleapis.com/v1beta",
 }
-PROVIDER_KEYS: dict[str, str] = {
-    "litellm": "LITELLM_API_KEY",
-    "deepseek": "DEEPSEEK_API_KEY",
-    "openai-responses": "OPENAI_API_KEY",
-    "codex": "OPENAI_API_KEY",
-    "anthropic": "ANTHROPIC_API_KEY",
-    "claude": "ANTHROPIC_API_KEY",
-    "gemini": "GEMINI_API_KEY",
-}
-# LiteLLM authentication is configured by the proxy administrator.
-REQUIRED_KEY_PROVIDERS: frozenset[str] = frozenset(PROVIDER_KEYS) - {"litellm"}
 PROVIDERS: tuple[str, ...] = ("openai-compatible", *PROVIDER_DEFAULTS)
 LOCAL_PROVIDERS: tuple[str, ...] = ("openai-compatible", "ollama", "llama")
 COMPATIBLE_PROVIDERS: tuple[str, ...] = (
@@ -47,7 +48,7 @@ TEXT_FIELDS: tuple[str, ...] = (
     "provider",
     "model_url",
     "model",
-    "model_key_env",
+    "model_api_key",
     "system_one_url",
     "system_one_model",
     "history_url",
@@ -91,17 +92,25 @@ def config_path() -> Path:
 def validate_defaults(
     values: dict[str, str | bool | int | float | None],
 ) -> dict[str, str | bool | int | float | None]:
-    if not isinstance(values, dict) or set(values) - set(SAVED_FIELDS):
+    if not isinstance(values, dict) or set(values) - {
+        *SAVED_FIELDS, "model_key_env",
+    }:
         raise ValueError(
             "Expected chat settings; unknown configuration fields"
         )
     if "capabilities" in values:
-        CapabilitySettings.model_validate(values["capabilities"])
+        try:
+            CapabilitySettings.model_validate(values["capabilities"])
+        except ValidationError as error:
+            issue = error.errors(include_input=False)[0]
+            raise ValueError(
+                "Invalid agent tool settings: " + issue["msg"]
+            ) from None
     if "providers" in values:
         ModelCatalog.validate(values["providers"])
     for name, value in values.items():
         if (
-            name in TEXT_FIELDS
+            name in (*TEXT_FIELDS, "model_key_env")
             and value is not None
             and not isinstance(value, str)
         ):
@@ -128,12 +137,8 @@ def validate_defaults(
     for name in ("model_url", "history_url", "system_one_url"):
         if values.get(name):
             valid_url(values[name])
-    if values.get("model_key_env") and not re.fullmatch(
-        r"[A-Za-z_][A-Za-z0-9_]*", values["model_key_env"]
-    ):
-        raise ValueError(
-            "API key environment variable must be a variable name"
-        )
+    validate_key(values.get("model_api_key"))
+    validate_key_env(values.get("model_key_env"))
     if values.get("no_thinking") and provider not in LOCAL_PROVIDERS:
         raise ValueError(
             "Disable thinking only for local compatible providers"
@@ -162,6 +167,11 @@ def save_defaults(args: Namespace) -> None:
     values: dict[str, str | bool | int | float | None] = validate_defaults(
         {name: getattr(args, name, None) for name in SAVED_FIELDS}
     )
+    values["model_api_key"] = model_api_key(args) or ""
+    values["providers"] = ModelCatalog.for_storage(args.providers)
+    values["capabilities"] = CapabilitySettings.model_validate(
+        args.capabilities
+    ).for_storage()
     path: Path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     private_write(

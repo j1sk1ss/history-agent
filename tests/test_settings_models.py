@@ -7,12 +7,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from textual.widgets import Input, Select
+from textual.widgets import Collapsible, Input, Select
 
 from history_agent.configuration.defaults import load_defaults
 from history_agent.interfaces.arguments import parse_args
 from history_agent.ui.app import HistoryApp
 from history_agent.ui.config import ConfigurationApp
+from history_agent.ui.config_capabilities import CapabilityEditor
 from history_agent.ui.config_models import ModelEditor
 from tests.test_model_catalog import CATALOG
 
@@ -67,11 +68,14 @@ class ModelSettingsTest(unittest.IsolatedAsyncioTestCase):
             await pilot.click("#add-model")
             await pilot.pause()
             self.assertIsInstance(app.screen, ModelEditor)
+            self.assertTrue(
+                app.screen.query_one("#connection_api_key", Input).password
+            )
             for name, value in (
                 ("connection_name", "local"),
                 ("model_id", "reviewer"),
                 ("connection_url", "http://localhost:9000/v1"),
-                ("key_env", "LOCAL_KEY"),
+                ("connection_api_key", "sk-pasted-model-key"),
             ):
                 app.screen.query_one("#" + name, Input).value = value
             await pilot.click("#apply-model")
@@ -85,10 +89,37 @@ class ModelSettingsTest(unittest.IsolatedAsyncioTestCase):
                 load_defaults()["model_profile"], "local/reviewer"
             )
             self.assertEqual(
-                load_defaults()["providers"]["local"]["api_key_env"],
-                "LOCAL_KEY",
+                load_defaults()["providers"]["local"]["api_key"],
+                "sk-pasted-model-key",
             )
             self.assertFalse(args.providers)
+
+    async def test_model_and_search_keys_are_masked_and_saved_as_values(self):
+        app = ConfigurationApp(parse_args([]))
+        async with app.run_test(size=(100, 60)) as pilot:
+            key = app.screen.query_one("#model_api_key", Input)
+            self.assertTrue(key.password)
+            key.value = "sk-ui-model-key"
+            section = app.screen.query_one("#agent-settings", Collapsible)
+            section.collapsed = False
+            app.screen.query_one("#tool-settings").scroll_visible(animate=False)
+            await pilot.pause()
+            await pilot.click("#tool-settings")
+            await pilot.pause()
+            self.assertIsInstance(app.screen, CapabilityEditor)
+            search = app.screen.query_one("#search-api-key", Input)
+            self.assertTrue(search.password)
+            search.value = "sk-ui-search-key"
+            await pilot.click("#apply-policy")
+            await pilot.pause()
+            await pilot.click("#save")
+            await pilot.pause()
+            saved = load_defaults()
+            self.assertEqual(saved["model_api_key"], "sk-ui-model-key")
+            self.assertEqual(
+                saved["capabilities"]["documentation"]["api_key"],
+                "sk-ui-search-key",
+            )
 
     async def test_question_enables_input_during_investigation(self):
         app = HistoryApp(parse_args([]))

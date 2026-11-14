@@ -13,8 +13,11 @@ from history_agent.inference.model import ChatError, Model, compact
 from history_agent.runtime.capabilities import HarnessCapabilities
 from history_agent.runtime.completion import complete_model
 from history_agent.runtime.execution import ToolExecutor
+from history_agent.runtime.identities import IdentityError
 from history_agent.runtime.messages import tool_exchange
+from history_agent.runtime.model_context import ModelContext
 from history_agent.runtime.parsing import parse_message
+from history_agent.runtime.recovery import ToolFailure, TurnRecovery
 from history_agent.runtime.tools import ToolClient
 
 
@@ -69,6 +72,7 @@ class Harness(HarnessCapabilities):
         self.result_tool: str | None = None
         self.client_tool_names: set[str] = set()
         self.client_instructions: str = ""
+        self.model_context = ModelContext()
         self.reset()
 
     def emit(self, kind: str, **data: object) -> None:
@@ -139,6 +143,7 @@ class Harness(HarnessCapabilities):
         self.messages.append({"role": "user", "content": text})
         try:
             self.prefetch(prefetched)
+            self.recovery = TurnRecovery(self.messages)
             return await self.run_turn()
         except BaseException as error:
             self.blocked = True
@@ -167,16 +172,54 @@ class Harness(HarnessCapabilities):
             calls: list[tuple[dict[str, object], dict[str, object]]]
             message, calls = self.parse_message(result)
             self.messages.append(message)
-            answer: str | None = self.final_answer(message, calls)
+            try:
+                answer: str | None = self.final_answer(message, calls)
+            except IdentityError as error:
+                failed = (
+                    calls[0][0]
+                    if calls
+                    else {
+                        "id": "invalid-verdict",
+                        "type": "function",
+                        "function": {
+                            "name": self.result_tool or "history_read",
+                        },
+                    }
+                )
+                failed["function"]["arguments"] = "{}"
+                self.recovery.reload(self, failed, ToolFailure(str(error)))
+                continue
             if answer is not None:
-                return answer
+                return self.recovery.finish(self, answer)
             if step == self.max_steps:
                 raise ChatError(
                     "Model step limit reached before executing more tools; "
                     "use /reset for a new task"
                 )
             for call, arguments in calls:
-                contents: str = await executor.run(call, arguments)
+                try:
+                    arguments = self.model_context.names.decode(arguments)
+                except IdentityError as error:
+                    call["function"]["arguments"] = compact(
+                        {
+                            "action": arguments.get("action"),
+                            "arguments": {},
+                        }
+                    )
+                    self.recovery.reload(self, call, ToolFailure(str(error)))
+                    break
+                call["function"]["arguments"] = compact(arguments)
+                try:
+                    contents: str = await executor.run(call, arguments)
+                except ToolFailure as error:
+                    self.recovery.reload(self, call, error)
+                    break
+                if call["function"]["name"] == "history_write" or (
+                    self.allow_write
+                    and arguments.get("action")
+                    in ("review_batch", "review_diff")
+                ):
+                    self.recovery.write_executed = True
                 self.messages.append(
                     {
                         "role": "tool",
@@ -195,9 +238,13 @@ class Harness(HarnessCapabilities):
         raise ChatError("Model step limit reached")
 
     async def request(self, step: int) -> dict[str, object]:
-        if self.allowed:
+        if self.allowed and not self.recovery.stop_after_feedback:
             self.sync_client_tools()
-        size: int = self.context_bytes()
+        messages = self.model_context.messages(self.messages)
+        tools = self.model_context.tools(self.tools)
+        if self.recovery.stop_after_feedback:
+            tools = []
+        size = len(compact({"messages": messages, "tools": tools}).encode())
         if size > self.max_context_bytes:
             raise ChatError(
                 "Context byte budget exceeded; use /reset, smaller source "
@@ -206,7 +253,7 @@ class Harness(HarnessCapabilities):
         started: float = time.monotonic()
         self.emit("request_start", step=step, context_bytes=size)
         result: dict[str, object] = await complete_model(
-            self.model, self.messages, self.tools, self.emit
+            self.model, messages, tools, self.emit
         )
         usage: object = result.get("usage")
         self.emit(
@@ -221,7 +268,7 @@ class Harness(HarnessCapabilities):
         calls: list[tuple[dict[str, object], dict[str, object]]],
     ) -> str | None:
         if not calls:
-            return message["content"] or ""
+            return self.model_context.verdict(message["content"] or "")
         if not self.result_tool or not any(
             call["function"]["name"] == self.result_tool for call, _ in calls
         ):
@@ -231,7 +278,7 @@ class Harness(HarnessCapabilities):
                 "Submit the final verdict alone, without other tool calls; "
                 "no tools were executed"
             )
-        return compact(calls[0][1])
+        return compact(self.model_context.names.decode(calls[0][1]))
 
     def parse_message(
         self,
@@ -239,4 +286,7 @@ class Harness(HarnessCapabilities):
     ) -> tuple[
         dict[str, object], list[tuple[dict[str, object], dict[str, object]]]
     ]:
-        return parse_message(result, self.allowed)
+        return parse_message(
+            result,
+            set() if self.recovery.stop_after_feedback else self.allowed,
+        )

@@ -15,6 +15,7 @@ from mcp import Client
 from history_agent.history.client import HistoryClient, Settings
 from history_agent.interfaces.chat import ChatError, Harness, Model, model_base
 from history_agent.interfaces.mcp import create_server
+from history_agent.runtime.identities import IdentityMap
 from tests.fake_history import FakeHistory
 from tests.test_client import REVIEW, SOURCE
 
@@ -61,6 +62,23 @@ class FakeModel:
         return result
 
 
+def named_reply(result, names):
+    """Encode canned server addresses just as a model copies exposed names."""
+    if isinstance(result, Exception):
+        return result
+    result = copy.deepcopy(result)
+    for choice in result.get("choices", []):
+        for entry in choice.get("message", {}).get("tool_calls", []):
+            function = entry["function"]
+            try:
+                function["arguments"] = json.dumps(
+                    names.encode(json.loads(function["arguments"]))
+                )
+            except ValueError:
+                pass
+    return result
+
+
 def connected(test):
     @wraps(test)
     async def wrapped(self):
@@ -87,7 +105,12 @@ class ChatTest(unittest.IsolatedAsyncioTestCase):
 
     def harness(self, *responses, **kwargs):
         model = FakeModel(*responses)
-        return Harness(self.client, model, self.tools, **kwargs), model
+        harness = Harness(self.client, model, self.tools, **kwargs)
+        names = harness.model_context.names
+        names.encode(SOURCE)
+        names.encode(REVIEW)
+        model.replies = [named_reply(result, names) for result in responses]
+        return harness, model
 
     @connected
     async def test_schema_then_source_then_answer_with_small_stable_prefix(
@@ -192,7 +215,7 @@ class ChatTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.fake.writes[0]["comment"], REVIEW["comment"])
 
     @connected
-    async def test_ambiguous_write_stops_session_without_another_model_turn(
+    async def test_ambiguous_write_reloads_with_tools_disabled_and_no_retry(
         self,
     ):
         self.fake.disconnect_on_write = True
@@ -205,14 +228,14 @@ class ChatTest(unittest.IsolatedAsyncioTestCase):
                     )
                 ]
             ),
+            answer("Write outcome is uncertain; inspect history."),
             allow_write=True,
         )
-        with self.assertRaisesRegex(
-            ChatError, "inspect warning/review history"
-        ):
-            await harness.ask("Save")
+        result = await harness.ask("Save")
+        self.assertIn("Inspect warning/review history", result)
         self.assertEqual(len(self.fake.writes), 1)
-        self.assertEqual(len(model.requests), 1)
+        self.assertEqual(len(model.requests), 2)
+        self.assertEqual(model.requests[-1]["tools"], [])
         self.assertTrue(harness.blocked)
 
     @connected
@@ -417,6 +440,8 @@ class ModelHTTPTest(unittest.TestCase):
         self.assertEqual(len(self.requests), 1)
 
     def test_cli_http_model_tool_calls_reach_only_isolated_history(self):
+        names = IdentityMap()
+        source = names.encode(SOURCE)
         self.response = [
             answer(
                 calls=[call("history_discover", {"action": "agent_source"})]
@@ -425,7 +450,7 @@ class ModelHTTPTest(unittest.TestCase):
                 calls=[
                     call(
                         "history_read",
-                        {"action": "agent_source", "arguments": SOURCE},
+                        {"action": "agent_source", "arguments": source},
                     )
                 ]
             ),
@@ -444,7 +469,7 @@ class ModelHTTPTest(unittest.TestCase):
                     "--model",
                     "synthetic",
                     "--prompt",
-                    "Inspect source",
+                    "Inspect source " + json.dumps(SOURCE),
                 ],
                 capture_output=True,
                 text=True,

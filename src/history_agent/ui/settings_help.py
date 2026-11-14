@@ -40,10 +40,10 @@ SETTINGS_HELP: dict[str, str] = {
         "stores it in the local configuration file with owner-only "
         "permissions (0600)."
     ),
-    "model_key_env": (
-        "The name of the environment variable containing the model API "
-        "key, for example OPENAI_API_KEY. Enter the variable name here "
-        "and set its value before launching. Local models often need no key."
+    "model_api_key": (
+        "Paste the model API key itself. Input is masked. The key is saved "
+        "in the local configuration file with owner-only permissions "
+        "(0600). Leave it empty for a server without authentication."
     ),
     "allow_write": (
         "Checked: save each validated verdict to the server immediately, "
@@ -58,7 +58,8 @@ SETTINGS_HELP: dict[str, str] = {
     ),
     "max_output_tokens": (
         "The maximum output tokens per model request. A low limit may "
-        "cut off reasoning or the final verdict."
+        "cut off reasoning or the final verdict. Input and output must fit "
+        "the backend model's context limit; proxy metadata may overstate it."
     ),
     "max_context_bytes": (
         "The input context budget in JSON bytes, rather than model tokens. "

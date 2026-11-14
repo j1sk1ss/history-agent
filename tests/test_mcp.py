@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import socket
 import subprocess
@@ -19,6 +20,14 @@ class MCPTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.fake = FakeHistory().__enter__()
         self.addCleanup(self.fake.__exit__)
+
+    async def named_source(self, client):
+        result = await client.call_tool("history_current", {})
+        scope = json.loads(result.content[0].text)["scope"]
+        return {
+            **SOURCE, "project_id": scope["project_id"],
+            "snapshot_id": scope["snapshot_id"],
+        }
 
     async def test_sdk_client_discovers_tools_resources_and_prompt(self):
         server = create_server(
@@ -81,7 +90,8 @@ class MCPTest(unittest.IsolatedAsyncioTestCase):
             catalog = await client.call_tool("history_discover", {})
             self.assertFalse(catalog.is_error)
             source = await client.call_tool(
-                "history_read", {"action": "agent_source", "arguments": SOURCE}
+                "history_read", {"action": "agent_source",
+                                 "arguments": await self.named_source(client)}
             )
             self.assertFalse(source.is_error)
             self.assertIn("пример", source.content[0].text)
@@ -132,7 +142,8 @@ class MCPTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len((await second.list_tools()).tools), 4)
                 result = await second.call_tool(
                     "history_read",
-                    {"action": "agent_source", "arguments": SOURCE},
+                    {"action": "agent_source",
+                     "arguments": await self.named_source(second)},
                 )
                 self.assertFalse(result.is_error)
                 self.assertIn("пример", result.content[0].text)

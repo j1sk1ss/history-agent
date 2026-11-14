@@ -2,63 +2,41 @@
 
 from __future__ import annotations
 
-import os
-import re
 from argparse import Namespace
 
-from history_agent.configuration.connection import discover_model, valid_url
-from history_agent.configuration.defaults import (
-    COMPATIBLE_PROVIDERS,
-    LOCAL_PROVIDERS,
-    PROVIDER_DEFAULTS,
-    PROVIDER_KEYS,
-    REQUIRED_KEY_PROVIDERS,
-)
-from history_agent.inference.model import ChatError, Model
+from history_agent.configuration.connection import valid_url
+from history_agent.configuration.model import configured_model
+from history_agent.inference.model import ChatError
 from history_agent.review.system_one import SystemOne
+from history_agent.runtime.parsing import parse_message
 
 
 def probe_model_connection(args: Namespace) -> tuple[bool, str]:
     try:
-        url = args.model_url or PROVIDER_DEFAULTS.get(args.provider)
-        if not url:
-            return False, "Enter the model URL."
-        base = valid_url(url)
-        if args.provider in COMPATIBLE_PROVIDERS:
-            if base.endswith(("/messages", "/responses")):
-                return False, (
-                    "This provider requires a Chat Completions endpoint."
-                )
-            base = base.removesuffix("/chat/completions")
-            if not re.search(r"/v\d+$", base):
-                base += "/v1"
-        elif base.endswith(("/messages", "/responses")):
-            base = base.rsplit("/", 1)[0]
-        key_env = args.model_key_env or PROVIDER_KEYS.get(
-            args.provider, "HISTORY_AGENT_MODEL_API_KEY"
+        model = configured_model(args, discovery_timeout=min(args.timeout, 5))
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "connection_check",
+                    "description": "Acknowledge the connection check.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": False,
+                    },
+                },
+            }
+        ]
+        result = model.complete(
+            [{"role": "user", "content": "Reply OK."}],
+            tools,
         )
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key_env):
-            return False, (
-                "Enter an API key environment variable name, such as "
-                "LITELLM_API_KEY, instead of the key itself."
-            )
-        key = os.environ.get(key_env)
-        if args.provider in REQUIRED_KEY_PROVIDERS and not key:
-            return False, f"Set the API key in {key_env}."
-        name = args.model
-        if not name and args.provider in LOCAL_PROVIDERS:
-            name = discover_model(base, key_env, timeout=min(args.timeout, 5))
-        if not name:
-            return False, "Enter the model ID."
-        model = Model(
-            base, name, key, args.timeout, max_output_tokens=32,
-            no_thinking=args.no_thinking and args.provider in LOCAL_PROVIDERS,
-            stream=False, stream_usage=False, provider=args.provider,
+        parse_message(result, {"connection_check"})
+        return True, (
+            "The model answered with the configured streaming, tools and "
+            "output settings."
         )
-        result = model.complete([{"role": "user", "content": "Reply OK."}], [])
-        if not result.get("choices"):
-            return False, "The model returned no completion."
-        return True, "The configured model answered a test request."
     except (ChatError, OSError, ValueError, TypeError, KeyError) as error:
         return False, str(error)
 

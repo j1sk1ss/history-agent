@@ -29,6 +29,7 @@ from history_agent.review.system_one import (
     load_warning_context,
     warning_context,
 )
+from history_agent.review.system_one_trace import history_reads
 from tests.fake_history import FakeHistory
 from tests.test_chat import answer, call
 from tests.test_streaming import (
@@ -62,6 +63,7 @@ def warning(id, checker="A_CHECKER"):
 
 
 class ReviewModel:
+    raw_scope = SCOPE
     def __init__(self, fail=None, verdict=None, callback=None):
         self.requests, self.fail, self.verdict, self.callback = (
             [],
@@ -83,10 +85,11 @@ class ReviewModel:
         if not items:
             return answer(json.dumps(self.verdict))
         item = items[0]
-        if item["warning_id"] == self.fail:
+        raw_warning = Path(item["location"]["file_path"]).stem
+        if raw_warning == self.fail:
             raise ChatError("Synthetic interruption")
         if self.callback:
-            self.callback(item)
+            self.callback({**item, "warning_id": raw_warning})
         result = self.verdict or {
             "classification": "TP",
             "comment": "Synthetic evidence for " + item["warning_id"],
@@ -98,11 +101,34 @@ class ReviewModel:
                 }
             ],
         }
-        response = answer(json.dumps(result))
+        response = answer(json.dumps(self.named(result, messages)))
         response["choices"][0]["message"]["reasoning_content"] = (
             "PRIVATE_THOUGHT_" + item["warning_id"]
         )
         return response
+
+    def named(self, value, messages):
+        scope = next(
+            (
+                args
+                for action, args, _ in history_reads(messages)
+                if action == "get_warning"
+            ),
+            {},
+        )
+        if isinstance(value, list):
+            return [self.named(entry, messages) for entry in value]
+        if not isinstance(value, dict):
+            return value
+        return {
+            key: scope[key]
+            if key in self.raw_scope
+            and entry == self.raw_scope[key]
+            and key in scope
+            else self.named(entry, messages)
+            for key, entry in value.items()
+        }
+
 
 
 class BatchTest(unittest.IsolatedAsyncioTestCase):
@@ -118,13 +144,14 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
         system_one = kwargs.pop("system_one", None)
 
         def factory(item_client):
+            model.raw_scope = item_client.scope
             transport = SystemOneClient(item_client, system_one)
             reviewer = Harness(
                 transport,
                 model,
                 tools,
                 max_steps=4,
-                on_event=lambda *args, **kwargs: None,
+                on_event=kwargs.get("on_event", lambda *args, **kwargs: None),
             )
             transport.context = lambda: warning_context(reviewer.messages)
             transport.load_context = lambda: load_warning_context(
@@ -228,22 +255,46 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
             def complete(self, messages, tools, on_event=None):
                 verdict = super().complete(messages, tools, on_event)
                 if len(self.requests) == 1:
-                    return answer(calls=[call("history_read", {
-                        "action": "agent_source",
-                        "arguments": {
-                            "project_id": 0, "snapshot_id": "WRONG_SNAPSHOT",
-                            "file": "src/a1.c", "line": 3,
-                        },
-                    })])
+                    return answer(
+                        calls=[
+                            call(
+                                "history_read",
+                                {
+                                    "action": "agent_source",
+                                    "arguments": self.named(
+                                        {
+                                            "project_id": 0,
+                                            "snapshot_id": "WRONG_SNAPSHOT",
+                                            "file": "src/a1.c",
+                                            "line": 3,
+                                        },
+                                        messages,
+                                    ),
+                                },
+                            )
+                        ]
+                    )
                 if len(self.requests) == 2:
-                    self.corrected_prompt = messages[-1]["content"]
-                    return answer(calls=[call("history_read", {
-                        "action": "agent_source",
-                        "arguments": {
-                            "project_id": 0, "snapshot_id": "snapshot",
-                            "file": "src/a1.c", "line": 3,
-                        },
-                    })])
+                    self.corrected_prompt = json.dumps(messages)
+                    return answer(
+                        calls=[
+                            call(
+                                "history_read",
+                                {
+                                    "action": "agent_source",
+                                    "arguments": self.named(
+                                        {
+                                            "project_id": 0,
+                                            "snapshot_id": "snapshot",
+                                            "file": "src/a1.c",
+                                            "line": 3,
+                                        },
+                                        messages,
+                                    ),
+                                },
+                            )
+                        ]
+                    )
                 return verdict
 
         with self.fixture() as server:
@@ -256,7 +307,11 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
                 model = CorrectingModel()
                 events = []
                 runner = self.runner(
-                    history, client, tools, model, allow_write=True,
+                    history,
+                    client,
+                    tools,
+                    model,
+                    allow_write=True,
                     on_event=lambda kind, **data: events.append((kind, data)),
                 )
                 result = await runner.run(SCOPE, write=True)
@@ -264,26 +319,38 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(server.writes), 1)
         self.assertEqual(len(model.requests), 3)
         self.assertIn("automatically reloaded", model.corrected_prompt)
-        self.assertIn(
-            'Allowed snapshot IDs: ["snapshot"]', model.corrected_prompt
-        )
+        self.assertIn("Unknown snapshot name", model.corrected_prompt)
         self.assertTrue(any(kind == "notice" for kind, _ in events))
-        self.assertFalse(any(
-            item["query"].get("snapshot_id") == "WRONG_SNAPSHOT"
-            for item in server.requests
-        ))
+        self.assertFalse(
+            any(
+                item["query"].get("snapshot_id") == "WRONG_SNAPSHOT"
+                for item in server.requests
+            )
+        )
 
     async def test_repeated_scope_errors_stop_after_two_auto_reloads(self):
         class WrongModel(ReviewModel):
             def complete(self, messages, tools, on_event=None):
                 super().complete(messages, tools, on_event)
-                return answer(calls=[call("history_read", {
-                    "action": "agent_source",
-                    "arguments": {
-                        **SCOPE, "snapshot_id": "WRONG_SNAPSHOT",
-                        "file": "src/a1.c", "line": 3,
-                    },
-                })])
+                return answer(
+                    calls=[
+                        call(
+                            "history_read",
+                            {
+                                "action": "agent_source",
+                                "arguments": self.named(
+                                    {
+                                        **SCOPE,
+                                        "snapshot_id": "WRONG_SNAPSHOT",
+                                        "file": "src/a1.c",
+                                        "line": 3,
+                                    },
+                                    messages,
+                                ),
+                            },
+                        )
+                    ]
+                )
 
         with self.fixture() as server:
             server.warnings = [warning("a1")]
@@ -293,12 +360,13 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
             async with Client(create_server(history)) as client:
                 model = WrongModel()
                 runner = self.runner(
-                    history, client, (await client.list_tools()).tools, model,
+                    history,
+                    client,
+                    (await client.list_tools()).tools,
+                    model,
                     allow_write=True,
                 )
-                with self.assertRaisesRegex(
-                    ChatError, "outside the warning/trace"
-                ):
+                with self.assertRaisesRegex(ChatError, "2 automatic reloads"):
                     await runner.run(SCOPE, write=True)
         self.assertEqual(len(model.requests), 3)
         self.assertFalse(server.writes)
@@ -416,15 +484,24 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
             def complete(self, messages, tools, on_event=None):
                 verdict = super().complete(messages, tools, on_event)
                 if len(self.requests) == 1:
-                    return answer(json.dumps({
-                        "classification": "TP",
-                        "comment": "Invented path, corrected on reload",
-                        "evidence": [{
-                            "file": "src/unread.c",
-                            "line": 999,
-                            "snapshot_id": "snapshot",
-                        }],
-                    }))
+                    return answer(
+                        json.dumps(
+                            self.named(
+                                {
+                                    "classification": "TP",
+                                "comment": "Unread path; correct on reload",
+                                    "evidence": [
+                                        {
+                                            "file": "src/unread.c",
+                                            "line": 999,
+                                            "snapshot_id": "snapshot",
+                                        }
+                                    ],
+                                },
+                                messages,
+                            )
+                        )
+                    )
                 self.corrected_prompt = messages[-1]["content"]
                 return verdict
 
@@ -438,7 +515,11 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
                 model = CorrectingVerdict()
                 events = []
                 runner = self.runner(
-                    history, client, tools, model, allow_write=True,
+                    history,
+                    client,
+                    tools,
+                    model,
+                    allow_write=True,
                     on_event=lambda kind, **data: events.append((kind, data)),
                 )
                 result = await runner.run(SCOPE, write=True)
@@ -1032,7 +1113,7 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
             "classification": "TP",
             "comment": "Synthetic source evidence",
             "evidence": [
-                {"file": "src/a1.c", "line": 3, "snapshot_id": "snapshot"}
+                {"file": "src/a1.c", "line": 3, "snapshot_id": "chloe"}
             ],
         }
         responses = [
@@ -1096,13 +1177,21 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
             "classification": "TP",
             "comment": "Source checked",
             "evidence": [
-                {"file": "src/a1.c", "line": 3, "snapshot_id": "snapshot"}
+                {"file": "src/a1.c", "line": 3, "snapshot_id": "chloe"}
             ],
         }
         responses = [
             tool_chunks("history_discover", {"action": BATCH_ACTION}),
             tool_chunks(
-                "history_read", {"action": BATCH_ACTION, "arguments": SCOPE}
+                "history_read",
+                {
+                    "action": BATCH_ACTION,
+                    "arguments": {
+                        "project_id": "diana",
+                        "stream_id": "max",
+                        "snapshot_id": "chloe",
+                    },
+                },
             ),
             [delta(content=json.dumps(verdict)), finish(), USAGE, "[DONE]"],
             [
@@ -1140,7 +1229,7 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
                     "--batch-state-dir",
                     str(self.root),
                     "--prompt",
-                    "Review all project warnings",
+                    "Review all project warnings " + json.dumps(SCOPE),
                     "--plain",
                     "--read-only",
                 ],

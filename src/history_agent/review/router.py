@@ -27,6 +27,7 @@ from history_agent.review.requests import (
     DifferenceCommand,
     ResumeRequest,
 )
+from history_agent.runtime.recovery import ToolFailure
 from history_agent.runtime.tools import ToolClient
 
 
@@ -56,7 +57,19 @@ class BatchRouter(ToolClient):
     ) -> CallToolResult:
         action: str | None = arguments.get("action")
         if action in (BATCH_ACTION, DIFF_ACTION):
-            return await self.run_batch(name, action, arguments)
+            if name != "history_discover":
+                self.runner.last_job_id = None
+            try:
+                return await self.run_batch(name, action, arguments)
+            except (ChatError, HistoryError, OSError) as error:
+                job_id = self.runner.last_job_id
+                raise ToolFailure(
+                    str(error),
+                    context={"job_id": job_id} if job_id else {},
+                    uncertain_write=bool(job_id) and (
+                        name == "history_write" or self.runner.allow_write
+                    ),
+                ) from error
         result = await self.client.call_tool(name, arguments)
 
         if name == "history_discover" and not action and not result.is_error:

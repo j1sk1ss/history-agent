@@ -17,6 +17,7 @@ from rich.console import Console
 from history_agent.history.client import HistoryClient, Settings
 from history_agent.interfaces.chat import ChatError, Harness, Model
 from history_agent.interfaces.mcp import create_server
+from history_agent.runtime.identities import IdentityMap
 from history_agent.ui.terminal import TerminalUI
 from history_agent.ui.text import ThinkingText
 from tests.fake_history import FakeHistory
@@ -172,13 +173,14 @@ class StreamTest(unittest.IsolatedAsyncioTestCase):
     async def test_tool_calls_wait_for_assembly_and_keep_reasoning(
         self,
     ):
+        source = IdentityMap().encode(SOURCE)
         responses = [
             tool_chunks("history_discover", {"action": "agent_source"}),
             [
                 delta(reasoning_content="Need the source"),
                 *tool_chunks(
                     "history_read",
-                    {"action": "agent_source", "arguments": SOURCE},
+                    {"action": "agent_source", "arguments": source},
                 ),
             ],
             [
@@ -205,7 +207,8 @@ class StreamTest(unittest.IsolatedAsyncioTestCase):
                     on_event=lambda kind, **data: events.append((kind, data)),
                 )
                 self.assertEqual(
-                    await harness.ask("Inspect source"), "Verified value = 42"
+                    await harness.ask("Inspect source " + json.dumps(SOURCE)),
+                    "Verified value = 42",
                 )
                 self.assertEqual(
                     history.requests[-1]["action"], "agent_source"

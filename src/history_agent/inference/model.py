@@ -26,7 +26,8 @@ class Model:
     provider: str = "openai-compatible"
 
     def complete(
-        self, messages: list[dict[str, object]],
+        self,
+        messages: list[dict[str, object]],
         tools: list[dict[str, object]],
         on_event: Callable[..., None] | None = None,
     ) -> dict[str, object]:
@@ -64,10 +65,11 @@ class Model:
             urllib.error.URLError,
             http.client.HTTPException,
         ) as error:
+            detail = request_failure(error)
             if isinstance(error, urllib.error.HTTPError):
                 error.close()
             raise ChatError(
-                request_failure(error) + " No automatic retry; no tools "
+                detail + " No automatic retry; no tools "
                 "from this response were executed."
             ) from None
         except (ValueError, UnicodeError, KeyError, TypeError, AttributeError):
@@ -79,7 +81,8 @@ class Model:
             ) from None
 
     def payload(
-        self, messages: list[dict[str, object]],
+        self,
+        messages: list[dict[str, object]],
         tools: list[dict[str, object]],
     ) -> dict[str, object]:
         payload: dict[str, object] = {

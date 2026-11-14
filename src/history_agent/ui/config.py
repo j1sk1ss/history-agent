@@ -8,14 +8,13 @@ from pathlib import Path
 
 from textual import on
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.dom import DOMNode
 from textual.screen import ModalScreen
 from textual.timer import Timer
 from textual.widgets import (
     Button,
     Checkbox,
-    Collapsible,
     Input,
     Label,
     Select,
@@ -27,7 +26,6 @@ from history_agent.configuration.defaults import (
     COMPATIBLE_PROVIDERS,
     LIMIT_FIELDS,
     LOCAL_PROVIDERS,
-    PROVIDERS,
     SAVED_FIELDS,
     save_defaults,
     validate_defaults,
@@ -38,15 +36,17 @@ from history_agent.configuration.probes import (
 from history_agent.configuration.probes import (
     probe_system_one_connection as probe_system_one_connection,
 )
-from history_agent.history.client import Settings
 from history_agent.prompts import Prompts
 from history_agent.ui.config_capabilities import CapabilityEditor
 from history_agent.ui.config_connections import ConnectionChecks
 from history_agent.ui.config_models import ModelPicker
+from history_agent.ui.config_sections import SettingsSections
 from history_agent.ui.settings_help import SETTINGS_HELP
 
 
-class ConfigurationScreen(ModelPicker, ConnectionChecks, ModalScreen):
+class ConfigurationScreen(
+    SettingsSections, ModelPicker, ConnectionChecks, ModalScreen,
+):
     TITLE: str = "History settings"
     CSS_PATH: Path = Path(__file__).with_name("config.tcss")
     BINDINGS: list[tuple[str, ...]] = [
@@ -64,90 +64,20 @@ class ConfigurationScreen(ModelPicker, ConnectionChecks, ModalScreen):
         self.connection_timer: Timer | None = None
 
     def compose(self) -> ComposeResult:
-        history: Settings = Settings.from_env()
-        with VerticalScroll(id="settings"):
-            yield Static("History", id="settings-title")
+        with Vertical(id="settings-dialog", classes="settings-dialog"):
+            yield Static("Settings", id="settings-title")
             yield Static(
                 "Connect a model and a code history server.", classes="muted"
             )
-            with Horizontal(id="connection-status"):
-                yield Static("[dim]■ Model: checking…[/]", id="model-status")
-                yield Static(
-                    "[dim]■ System 1: checking…[/]", id="system-one-status"
-                )
-                yield Button("Check", id="check-connections")
-            yield Static("", id="model-connection-error", markup=False)
-            yield from self.model_picker()
-            yield Label("Provider")
-            yield Select(
-                [(name, name) for name in PROVIDERS],
-                value=self.args.provider,
-                allow_blank=False,
-                id="provider",
-            )
-            yield Label("Model URL")
-            yield Input(self.args.model_url or "", id="model_url")
-            yield Label("Model ID")
-            yield Input(
-                self.args.model or "",
-                placeholder="Auto-detect for local models",
-                id="model",
-            )
-            yield Label("History URL")
-            yield Input(
-                self.args.history_url or history.url,
-                id="history_url",
-            )
-            yield Label("History username")
-            yield Input(
-                self.args.history_user
-                if self.args.history_user is not None
-                else history.user or "",
-                id="history_user",
-            )
-            yield Label("History password")
-            yield Input(
-                self.args.history_password
-                if self.args.history_password is not None
-                else history.password or "",
-                password=True,
-                id="history_password",
-            )
-            yield Label("API key environment variable")
-            yield Input(self.args.model_key_env or "", id="model_key_env")
-            yield Checkbox(
-                "Save each validated review immediately",
-                value=self.args.allow_write,
-                id="allow_write",
-            )
-            yield from self.advanced_fields()
+            with VerticalScroll(id="settings", classes="settings-body"):
+                yield from self.model_fields()
+                yield from self.history_fields()
+                yield from self.review_fields()
+                yield from self.optional_fields()
             yield Static("", id="settings-error", markup=False)
-            with Horizontal(id="settings-actions"):
+            with Horizontal(id="settings-actions", classes="settings-actions"):
                 yield Button("Save and start", variant="primary", id="save")
                 yield Button("Cancel", id="cancel")
-
-    def advanced_fields(self):
-        with Collapsible(title="Advanced", collapsed=True):
-            yield Label("Prompt overrides JSON file")
-            yield Input(self.args.prompts_file or "", id="prompts_file")
-            yield Button("Agent tool settings", id="tool-settings")
-            yield Label("System 1 URL")
-            yield Input(self.args.system_one_url or "", id="system_one_url")
-            yield Label("System 1 model (empty to disable)")
-            yield Input(
-                self.args.system_one_model or "", id="system_one_model"
-            )
-            for name in LIMIT_FIELDS:
-                yield Label(name.replace("_", " ").capitalize())
-                yield Input(str(getattr(self.args, name)), id=name)
-            for name, label in (
-                ("no_thinking", "Disable thinking (Qwen / local models)"),
-                ("no_stream", "Disable streaming"),
-                ("no_stream_usage", "Disable streaming usage reporting"),
-                ("stats", "Show detailed statistics"),
-                ("no_patterns", "Disable reusable review checklists"),
-            ):
-                yield Checkbox(label, value=getattr(self.args, name), id=name)
 
     def on_mount(self) -> None:
         for name, description in SETTINGS_HELP.items():
@@ -158,7 +88,7 @@ class ConfigurationScreen(ModelPicker, ConnectionChecks, ModalScreen):
             if index < len(siblings):
                 label.tooltip = SETTINGS_HELP.get(siblings[index].id)
         self.update_placeholders()
-        self.query_one("#model_url", Input).focus()
+        self.query_one("#model_profile", Select).focus()
         self.schedule_connection_check()
 
     @on(Button.Pressed, "#save")
@@ -170,7 +100,6 @@ class ConfigurationScreen(ModelPicker, ConnectionChecks, ModalScreen):
                 "model_url",
                 "model",
                 "history_url",
-                "model_key_env",
                 "system_one_url",
                 "system_one_model",
                 "prompts_file",
@@ -180,6 +109,10 @@ class ConfigurationScreen(ModelPicker, ConnectionChecks, ModalScreen):
                     name,
                     self.query_one("#" + name, Input).value.strip() or None,
                 )
+            args.model_api_key = self.query_one(
+                "#model_api_key", Input
+            ).value.strip()
+            args.model_key_env = None
             if args.system_one_model and not args.system_one_url:
                 raise ValueError("Enter a System 1 URL")
             args.history_user = self.query_one(

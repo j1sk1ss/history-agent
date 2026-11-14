@@ -16,6 +16,7 @@ from history_agent.interfaces.arguments import parse_args
 from history_agent.interfaces.cli import run
 from tests.fake_history import FakeHistory
 from tests.test_api_keys import COMPLETION, HeaderServer
+from tests.test_chat import answer
 from tests.test_streaming import (
     StreamingServer,
     delta,
@@ -141,7 +142,7 @@ class LiteLLMTest(unittest.IsolatedAsyncioTestCase):
                 self.subTest(key=key),
                 patch.dict(os.environ, environment),
                 patch.object(Model, "complete", autospec=True,
-                             return_value={"choices": [{}]}) as complete,
+                             return_value=answer("OK")) as complete,
             ):
                 connected, _ = probe_model_connection(parse_args([
                     "--provider", "litellm", "--model", "team/reviewer",
@@ -154,7 +155,8 @@ class LiteLLMTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(model.provider, "litellm")
             self.assertEqual(model.name, "team/reviewer")
             self.assertEqual(model.key, key)
-            self.assertFalse(model.stream)
+            self.assertTrue(model.stream)
+            self.assertTrue(complete.call_args.args[2])
             self.assertEqual(model.timeout, 45)
 
     def test_probe_payload_does_not_send_empty_tools_to_proxy(self):
@@ -167,17 +169,13 @@ class LiteLLMTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_alias_is_required_without_local_model_discovery(self):
         args = parse_args(["--provider", "litellm"])
-        with (
-            patch("history_agent.interfaces.cli.discover_model") as cli,
-            patch(
-                "history_agent.configuration.probes.discover_model",
-            ) as probe,
-        ):
+        with patch(
+            "history_agent.configuration.model.discover_model",
+        ) as discover:
             self.assertFalse(probe_model_connection(args)[0])
             with self.assertRaisesRegex(ChatError, "Specify --model"):
                 await run(args)
-        cli.assert_not_called()
-        probe.assert_not_called()
+        discover.assert_not_called()
 
     async def test_profile_selection_clears_local_thinking_setting(self):
         providers = {"proxy": {

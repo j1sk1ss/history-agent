@@ -2,36 +2,20 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
-import re
 import sys
 from dataclasses import replace
 
 from mcp import Client
 
-from history_agent.configuration.connection import discover_model, valid_url
-from history_agent.configuration.defaults import (
-    COMPATIBLE_PROVIDERS,
-    LOCAL_PROVIDERS,
-    PROVIDER_DEFAULTS,
-    PROVIDER_KEYS,
-    REQUIRED_KEY_PROVIDERS,
-    load_defaults,
-)
+from history_agent.configuration.defaults import load_defaults
+from history_agent.configuration.model import configured_model
+from history_agent.configuration.model import model_base as model_base
 from history_agent.history.client import HistoryClient, Settings
 from history_agent.inference.model import ChatError, Model
 from history_agent.interfaces.arguments import parse_args
 from history_agent.interfaces.mcp import create_server
 from history_agent.prompts import Prompts
 from history_agent.runtime.session import converse
-
-
-def model_base(url: str) -> str:
-    base: str = valid_url(url)
-    if base.endswith(("/responses", "/messages")):
-        raise ValueError("history-chat requires a Chat Completions endpoint")
-    base = base.removesuffix("/chat/completions")
-    return base if re.search(r"/v\d+$", base) else base + "/v1"
 
 
 def history_settings(args: argparse.Namespace) -> Settings:
@@ -58,46 +42,8 @@ async def run(
     args: argparse.Namespace,
 ) -> dict[str, argparse.Namespace | str | None] | str | None:
     Prompts.configure(getattr(args, "prompts_file", None))
-    url: str | None = args.model_url or PROVIDER_DEFAULTS.get(args.provider)
-    if not url:
-        raise ChatError(
-            "Specify --model-url for an OpenAI-compatible inference server"
-        )
-    if args.provider in COMPATIBLE_PROVIDERS:
-        base: str = model_base(url)
-    else:
-        base = valid_url(url).rstrip("/")
-        if base.endswith("/messages") or base.endswith("/responses"):
-            base = base.rsplit("/", 1)[0]
-    env: str = args.model_key_env or PROVIDER_KEYS.get(
-        args.provider, "HISTORY_AGENT_MODEL_API_KEY"
-    )
-    key: str | None = os.environ.get(env)
-    if args.provider in REQUIRED_KEY_PROVIDERS and not key:
-        raise ChatError(f"{args.provider} requires an API key in {env}")
-    if args.provider not in LOCAL_PROVIDERS:
-        if not args.model:
-            raise ChatError(f"Specify --model for provider {args.provider}")
-        name: str = args.model
-    else:
-        name = args.model or await asyncio.to_thread(discover_model, base, env)
-    if args.no_thinking and args.provider not in LOCAL_PROVIDERS:
-        raise ChatError(
-            "--no-thinking only applies to compatible local chat-template"
-            " servers"
-        )
+    model: Model = await asyncio.to_thread(configured_model, args)
     settings: Settings = history_settings(args)
-    model: Model = Model(
-        base,
-        name,
-        key,
-        args.timeout,
-        args.max_output_tokens,
-        args.no_thinking,
-        stream=not args.no_stream,
-        stream_usage=not args.no_stream_usage,
-        provider=args.provider,
-    )
 
     failure: ChatError | None = None
     history: HistoryClient = HistoryClient(settings)

@@ -137,13 +137,26 @@ def review_warning(
     )
 
 
-def create_server(client: HistoryClient) -> MCPServer:
+def create_server(
+    client: HistoryClient,
+    *,
+    named_ids: bool = False,
+) -> MCPServer:
+    instructions = Prompts.get("interfaces.instructions")
+    tools = HistoryTools(client)
+    if named_ids:
+        from history_agent.interfaces.named_tools import (
+            NamedHistoryTools,
+            named_instructions,
+        )
+
+        tools = NamedHistoryTools(tools)
+        instructions += " " + named_instructions()
     server: MCPServer = MCPServer(
         "history-agent",
         version="0.1.0",
-        instructions=Prompts.get("interfaces.instructions"),
+        instructions=instructions,
     )
-    tools: HistoryTools = HistoryTools(client)
     readonly: ToolAnnotations = ToolAnnotations(
         read_only_hint=True, open_world_hint=False
     )
@@ -167,7 +180,7 @@ def create_server(client: HistoryClient) -> MCPServer:
     server.resource("history://api", mime_type="text/markdown")(
         http_api_reference
     )
-    server.prompt()(review_warning)
+    server.prompt()(tools.review_warning if named_ids else review_warning)
     return server
 
 
@@ -191,7 +204,10 @@ def main() -> None:
     )
     options: argparse.Namespace = parser.parse_args()
     Prompts.configure(options.prompts_file)
-    server: MCPServer = create_server(HistoryClient(Settings.from_env()))
+    server: MCPServer = create_server(
+        HistoryClient(Settings.from_env()),
+        named_ids=True,
+    )
     if options.transport == "stdio":
         server.run()
     else:

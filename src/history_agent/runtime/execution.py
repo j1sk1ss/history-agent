@@ -9,13 +9,19 @@ from mcp import Client
 from mcp.types import CallToolResult
 
 from history_agent.inference.model import ChatError, compact
+from history_agent.runtime.recovery import ToolFailure
 from history_agent.runtime.tools import ToolClient
 
 
 class ToolExecutor:
     def __init__(
-        self, client: Client | ToolClient, emit: Callable[..., None],
-        byte_limit: int, *, quiet: bool, identity: int,
+        self,
+        client: Client | ToolClient,
+        emit: Callable[..., None],
+        byte_limit: int,
+        *,
+        quiet: bool,
+        identity: int,
     ) -> None:
         self.client: Client | ToolClient = client
         self.emit: Callable[..., None] = emit
@@ -27,7 +33,9 @@ class ToolExecutor:
         return f"{self.identity}:{call['id']}"
 
     async def run(
-        self, call: dict[str, object], arguments: dict[str, object],
+        self,
+        call: dict[str, object],
+        arguments: dict[str, object],
     ) -> str:
         name: str = call["function"]["name"]
         started: float = time.monotonic()
@@ -40,7 +48,29 @@ class ToolExecutor:
         )
         if not self.quiet:
             print("tool:", name, file=sys.stderr)
-        outcome: CallToolResult = await self.client.call_tool(name, arguments)
+        uncertain = name == "history_write" or arguments.get("action") in (
+            "review_batch",
+            "review_diff",
+        )
+        try:
+            outcome: CallToolResult = await self.client.call_tool(
+                name, arguments
+            )
+        except Exception as error:
+            self.emit(
+                "tool_end",
+                name=name,
+                event_id=event_id,
+                error=True,
+                seconds=time.monotonic() - started,
+                bytes=0,
+            )
+            if isinstance(error, ToolFailure):
+                raise
+            raise ToolFailure(
+                str(error) or type(error).__name__,
+                uncertain_write=uncertain,
+            ) from error
         self.emit(
             "tool_end",
             name=name,
@@ -53,9 +83,18 @@ class ToolExecutor:
                 if part.type == "text"
             ),
         )
+        try:
+            contents = self.contents(name, outcome)
+            data = json.loads(contents)
+        except ValueError:
+            data = None
+        except ChatError as error:
+            raise ToolFailure(str(error), uncertain_write=uncertain) from error
+        if outcome.is_error or (isinstance(data, dict) and data.get("error")):
+            raise ToolFailure(contents, uncertain_write=uncertain)
         if name == "history_write":
             self.verify_write(outcome)
-        return self.contents(name, outcome)
+        return contents
 
     def verify_write(self, outcome: CallToolResult) -> None:
         if outcome.is_error:

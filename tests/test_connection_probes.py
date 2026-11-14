@@ -9,20 +9,30 @@ from history_agent.configuration.probes import (
 from history_agent.inference.model import ChatError, Model
 from history_agent.interfaces.arguments import parse_args
 from history_agent.review.system_one import SystemOne
+from tests.test_chat import answer
 
 
 class ConnectionProbeTest(unittest.TestCase):
     def test_main_probe_uses_the_selected_model_endpoint_and_key(self):
-        args = parse_args([
-            "--model-url", "https://model.example/v1/chat/completions",
-            "--model", "selected-model", "--model-key-env", "TEST_MODEL_KEY",
-            "--timeout", "45",
-        ])
+        args = parse_args(
+            [
+                "--model-url",
+                "https://model.example/v1/chat/completions",
+                "--model",
+                "selected-model",
+                "--model-api-key",
+                "sk-pasted-key",
+                "--timeout",
+                "45",
+            ]
+        )
         with (
             patch.dict(os.environ, {"TEST_MODEL_KEY": "test-key"}),
             patch.object(
-                Model, "complete", autospec=True,
-                return_value={"choices": [{}]},
+                Model,
+                "complete",
+                autospec=True,
+                return_value=answer("OK"),
             ) as complete,
         ):
             connected, _ = probe_model_connection(args)
@@ -30,13 +40,50 @@ class ConnectionProbeTest(unittest.TestCase):
         model = complete.call_args.args[0]
         self.assertEqual(model.base, "https://model.example/v1")
         self.assertEqual(model.name, "selected-model")
-        self.assertEqual(model.key, "test-key")
+        self.assertEqual(model.key, "sk-pasted-key")
         self.assertEqual(model.timeout, 45)
+        self.assertEqual(model.max_output_tokens, args.max_output_tokens)
+        self.assertTrue(model.stream)
+        self.assertTrue(model.stream_usage)
+        self.assertTrue(complete.call_args.args[2])
+
+    def test_probe_honors_streaming_flags_and_rejects_invalid_completions(
+        self,
+    ):
+        args = parse_args(
+            [
+                "--model-url",
+                "https://model.example/v1",
+                "--model",
+                "selected",
+                "--no-stream",
+                "--no-stream-usage",
+                "--max-output-tokens",
+                "1234",
+            ]
+        )
+        with patch.object(
+            Model,
+            "complete",
+            autospec=True,
+            return_value={"choices": [{}]},
+        ) as complete:
+            connected, _ = probe_model_connection(args)
+        self.assertFalse(connected)
+        model = complete.call_args.args[0]
+        self.assertFalse(model.stream)
+        self.assertFalse(model.stream_usage)
+        self.assertEqual(model.max_output_tokens, 1234)
 
     def test_rejected_main_model_is_not_reported_as_connected(self):
-        args = parse_args([
-            "--model-url", "https://model.example/v1", "--model", "missing",
-        ])
+        args = parse_args(
+            [
+                "--model-url",
+                "https://model.example/v1",
+                "--model",
+                "missing",
+            ]
+        )
         with patch.object(
             Model, "complete", side_effect=ChatError("Not found")
         ):
@@ -45,10 +92,16 @@ class ConnectionProbeTest(unittest.TestCase):
         self.assertEqual(detail, "Not found")
 
     def test_key_value_in_environment_name_field_is_not_echoed_or_sent(self):
-        args = parse_args([
-            "--provider", "litellm", "--model", "team/reviewer",
-            "--model-key-env", "sk-private-token",
-        ])
+        args = parse_args(
+            [
+                "--provider",
+                "litellm",
+                "--model",
+                "team/reviewer",
+                "--model-key-env",
+                "sk-private-token",
+            ]
+        )
         with patch.object(Model, "complete") as complete:
             connected, detail = probe_model_connection(args)
         self.assertFalse(connected)
@@ -58,12 +111,18 @@ class ConnectionProbeTest(unittest.TestCase):
 
     def test_local_model_is_discovered_with_a_short_timeout(self):
         args = parse_args(["--model-url", "https://model.example"])
-        with patch(
-            "history_agent.configuration.probes.discover_model",
-            return_value="only-model",
-        ) as discover, patch.object(
-            Model, "complete", autospec=True, return_value={"choices": [{}]},
-        ) as complete:
+        with (
+            patch(
+                "history_agent.configuration.model.discover_model",
+                return_value="only-model",
+            ) as discover,
+            patch.object(
+                Model,
+                "complete",
+                autospec=True,
+                return_value=answer("OK"),
+            ) as complete,
+        ):
             connected, _ = probe_model_connection(args)
         self.assertTrue(connected)
         self.assertEqual(complete.call_args.args[0].name, "only-model")
@@ -71,16 +130,25 @@ class ConnectionProbeTest(unittest.TestCase):
         self.assertEqual(discover.call_args.kwargs["timeout"], 5)
 
     def test_remote_provider_keeps_its_transport(self):
-        args = parse_args([
-            "--provider", "anthropic", "--model", "selected-model",
-            "--model-url", "https://model.example/v1/messages",
-            "--model-key-env", "TEST_MODEL_KEY",
-        ])
+        args = parse_args(
+            [
+                "--provider",
+                "anthropic",
+                "--model",
+                "selected-model",
+                "--model-url",
+                "https://model.example/v1/messages",
+                "--model-key-env",
+                "TEST_MODEL_KEY",
+            ]
+        )
         with (
             patch.dict(os.environ, {"TEST_MODEL_KEY": "test-key"}),
             patch.object(
-                Model, "complete", autospec=True,
-                return_value={"choices": [{}]},
+                Model,
+                "complete",
+                autospec=True,
+                return_value=answer("OK"),
             ) as complete,
         ):
             connected, _ = probe_model_connection(args)

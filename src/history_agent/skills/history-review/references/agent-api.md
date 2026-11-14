@@ -1,5 +1,25 @@
 # History API for review agents
 
+## Model names and HTTP identities
+
+The harness and standalone MCP server expose session names such as `diana`,
+`max` and `chloe` in all `*_id`, `snapshot_override`, `hash`, `mti` and
+`token_group` fields. Model schemas use strings for these names, including
+numeric HTTP project IDs. Copy names from tool results exactly. Real IDs,
+credentials, integer conversion and scope validation stay in the host.
+`HEAD` remains a supported snapshot selector. Source paths, source text,
+checker names, CWE numbers and line/column offsets retain their meaning.
+Names survive reload within a session; a new session resolves scope again.
+
+The contract below describes HTTP transport; the host translates model names
+to its raw IDs before sending requests. Examples are model-facing arguments
+with names already returned by tools, never names to invent.
+
+In `history-chat`, tool errors trigger up to two context reloads with explicit error
+feedback. Correct arguments or use smaller pages. Re-read missing schemas/source as
+needed; do not replay successful writes. An uncertain write disables tools for the feedback response; inspect
+review history before any later retry.
+
 These actions extend `/history/api?act=...`. Existing actions and response shapes
 are unchanged. `get_actions` includes all actions. `actions_agent` provides input
 JSON Schemas, parameter placement, read/write flags, `session_required` and
@@ -50,7 +70,7 @@ active-warning selection are enforced by the existing API.
 Example arguments:
 
 ```json
-{"project_id":0,"stream_id":"master","snapshot_id":"<snapshot>",
+{"project_id":"diana","stream_id":"max","snapshot_id":"chloe",
  "checker_name":"DEREF_OF_NULL","match":"exact","offset":0,"limit":20}
 ```
 

@@ -5,6 +5,8 @@ import socket
 import ssl
 import urllib.error
 
+from history_agent.inference.rejections import rejected_parameter
+
 MAX_RESPONSE_BYTES: int = 2 * 1024 * 1024
 
 
@@ -21,12 +23,13 @@ def request_failure(error: BaseException) -> str:
     if isinstance(error, urllib.error.HTTPError):
         detail = {
             400: "request rejected; check model and supported parameters",
-            401: "authentication failed; check the API key variable",
+            401: "authentication failed; check the API key",
             403: "access denied; check key permissions for this model",
             404: "endpoint or model not found; check URL and model ID",
             429: "rate limit or quota exceeded",
         }.get(error.code, "server rejected the request")
-        return f"Model API returned HTTP {error.code}: {detail}."
+        hint = rejected_parameter(error) if error.code == 400 else ""
+        return f"Model API returned HTTP {error.code}: {detail}." + hint
     reason = (
         error.reason if isinstance(error, urllib.error.URLError) else error
     )

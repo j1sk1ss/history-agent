@@ -1,11 +1,11 @@
 """Search only named third-party APIs on host-approved documentation sites."""
 
-import os
 from typing import Literal
 
 from pydantic import Field
 
 from history_agent.configuration.capabilities import DocumentationSettings
+from history_agent.configuration.credentials import resolve_api_key
 from history_agent.contracts import StrictModel
 from history_agent.prompts import Prompts
 from history_agent.tools.documentation_http import DocumentationHTTP
@@ -58,12 +58,12 @@ class DocumentationTools:
             }
         if request.url or request.offset:
             raise ValueError("Search accepts only library, symbol and version")
-        key = os.environ.get(settings.api_key_env)
+        key = resolve_api_key(settings.api_key, settings.api_key_env)
         if not key:
             return {
                 "status": "unavailable",
                 "documentation_hosts": hosts,
-                "error": f"Set {settings.api_key_env} for search; "
+                "error": "Enter the search API key in agent tool settings; "
                 "known documentation URLs can still be read.",
             }
         sites = " OR ".join("site:" + host for host in hosts)

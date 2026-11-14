@@ -7,6 +7,11 @@ import re
 
 from pydantic import Field, field_validator
 
+from history_agent.configuration.credentials import (
+    resolve_api_key,
+    validate_key,
+    validate_key_env,
+)
 from history_agent.contracts import StrictModel
 
 DEFAULT_LIBRARIES = {
@@ -25,7 +30,10 @@ DEFAULT_LIBRARIES = {
 
 class DocumentationSettings(StrictModel):
     enabled: bool = True
-    api_key_env: str = "BRAVE_SEARCH_API_KEY"
+    api_key: str | None = Field(default=None, repr=False)
+    api_key_env: str | None = Field(
+        default="BRAVE_SEARCH_API_KEY", exclude=True, repr=False
+    )
     libraries: dict[str, list[str]] = Field(
         default_factory=lambda: {
             k: list(v) for k, v in DEFAULT_LIBRARIES.items()
@@ -35,9 +43,12 @@ class DocumentationSettings(StrictModel):
     @field_validator("api_key_env")
     @classmethod
     def environment_name(cls, value: str) -> str:
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value):
-            raise ValueError("Expected an API key environment variable name")
-        return value
+        return validate_key_env(value)
+
+    @field_validator("api_key")
+    @classmethod
+    def key_value(cls, value):
+        return validate_key(value)
 
     @field_validator("libraries")
     @classmethod
@@ -100,3 +111,10 @@ class CapabilitySettings(StrictModel):
         default_factory=DocumentationSettings
     )
     lsp: LanguageServerSettings = Field(default_factory=LanguageServerSettings)
+
+    def for_storage(self) -> dict:
+        values = self.model_dump()
+        values["documentation"]["api_key"] = resolve_api_key(
+            self.documentation.api_key, self.documentation.api_key_env
+        ) or ""
+        return values

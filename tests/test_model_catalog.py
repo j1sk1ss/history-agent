@@ -1,7 +1,9 @@
 """Saved model selection, CLI precedence and schema validation."""
 
 import unittest
+from unittest.mock import patch
 
+from history_agent.configuration.credentials import model_api_key
 from history_agent.configuration.defaults import validate_defaults
 from history_agent.configuration.models import ModelCatalog
 from history_agent.interfaces.arguments import parse_args
@@ -10,7 +12,7 @@ CATALOG = {
     "local": {
         "transport": "openai-compatible",
         "base_url": "http://localhost:9000/v1",
-        "api_key_env": "LOCAL_KEY",
+        "api_key": "sk-saved-model-key",
         "models": {
             "vendor/reviewer": {
                 "label": "Reviewer",
@@ -38,7 +40,7 @@ class ModelCatalogTest(unittest.TestCase):
         )
         self.assertEqual(args.model, "vendor/reviewer")
         self.assertEqual(args.model_url, "http://localhost:9000/v1")
-        self.assertEqual(args.model_key_env, "LOCAL_KEY")
+        self.assertEqual(args.model_api_key, "sk-saved-model-key")
         self.assertEqual(args.max_context_bytes, 100000)
 
     def test_explicit_cli_overrides_selected_model(self):
@@ -71,7 +73,7 @@ class ModelCatalogTest(unittest.TestCase):
         self.assertEqual(args.model_url, "https://model.example/v1")
         self.assertIsNone(args.model_key_env)
 
-    def test_catalog_is_validated_and_contains_no_raw_key_field(self):
+    def test_catalog_validates_connection_types_and_limits(self):
         for connection in (
             {
                 "transport": "invalid",
@@ -80,7 +82,7 @@ class ModelCatalogTest(unittest.TestCase):
             },
             {
                 "base_url": "https://example.org",
-                "api_key": "secret",
+                "api_key": 42,
                 "models": {"x": {}},
             },
             {
@@ -93,6 +95,23 @@ class ModelCatalogTest(unittest.TestCase):
                 self.assertRaises(ValueError),
             ):
                 ModelCatalog.validate({"test": connection})
+
+    def test_direct_cli_key_overrides_selected_profile_and_environment(self):
+        args = parse_args(["--model-api-key", "sk-cli-key"], defaults={
+            "providers": CATALOG, "model_profile": "local/small",
+        })
+        with patch.dict("os.environ", {
+            "HISTORY_AGENT_MODEL_API_KEY": "other",
+        }):
+            self.assertEqual(model_api_key(args), "sk-cli-key")
+
+    def test_invalid_catalog_errors_do_not_echo_the_api_key(self):
+        with self.assertRaises(ValueError) as error:
+            ModelCatalog.validate({"test": {
+                "base_url": "https://example.org", "api_key": "secret-token",
+                "models": {"x": {"max_context_bytes": -1}},
+            }})
+        self.assertNotIn("secret-token", str(error.exception))
 
     def test_unknown_selected_profile_is_rejected(self):
         with self.assertRaises(ValueError):

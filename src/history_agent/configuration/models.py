@@ -1,12 +1,17 @@
-"""Named connections and model selection without storing API secrets."""
+"""Named provider connections, credentials and model selection."""
 
 from __future__ import annotations
 
 import re
 
-from pydantic import Field, TypeAdapter, field_validator
+from pydantic import Field, TypeAdapter, ValidationError, field_validator
 
 from history_agent.configuration.connection import valid_url
+from history_agent.configuration.credentials import (
+    provider_api_key,
+    validate_key,
+    validate_key_env,
+)
 from history_agent.contracts import StrictModel
 
 TRANSPORTS = (
@@ -33,7 +38,8 @@ class ModelOptions(StrictModel):
 class ProviderConnection(StrictModel):
     transport: str = "openai-compatible"
     base_url: str
-    api_key_env: str | None = None
+    api_key: str | None = Field(default=None, repr=False)
+    api_key_env: str | None = Field(default=None, exclude=True, repr=False)
     models: dict[str, ModelOptions] = Field(min_length=1)
 
     @field_validator("transport")
@@ -51,9 +57,12 @@ class ProviderConnection(StrictModel):
     @field_validator("api_key_env")
     @classmethod
     def key_name(cls, value):
-        if value and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value):
-            raise ValueError("Expected an API key environment variable name")
-        return value
+        return validate_key_env(value)
+
+    @field_validator("api_key")
+    @classmethod
+    def key_value(cls, value):
+        return validate_key(value)
 
     @field_validator("models")
     @classmethod
@@ -68,9 +77,16 @@ class ProviderConnection(StrictModel):
 class ModelCatalog:
     @staticmethod
     def validate(values: dict) -> dict[str, ProviderConnection]:
-        providers = TypeAdapter(dict[str, ProviderConnection]).validate_python(
-            values
-        )
+        try:
+            providers = TypeAdapter(
+                dict[str, ProviderConnection]
+            ).validate_python(values)
+        except ValidationError as error:
+            issue = error.errors(include_input=False)[0]
+            location = ".".join(map(str, issue["loc"]))
+            raise ValueError(
+                f"Invalid model connection {location}: {issue['msg']}"
+            ) from None
         if any(
             not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", key) for key in providers
         ):
@@ -98,6 +114,7 @@ class ModelCatalog:
             "provider": connection.transport,
             "model_url": connection.base_url,
             "model_key_env": connection.api_key_env,
+            "model_api_key": connection.api_key,
             "model": model,
             **options,
         }
@@ -111,7 +128,23 @@ class ModelCatalog:
         ]
 
     @staticmethod
+    def for_storage(values: dict) -> dict:
+        return {
+            name: {
+                **connection.model_dump(),
+                "api_key": provider_api_key(
+                    connection.transport, connection.api_key,
+                    connection.api_key_env,
+                ) or "",
+            }
+            for name, connection in ModelCatalog.validate(values).items()
+        }
+
+    @staticmethod
     def apply(args, explicit: set[str]):
+        if "model_key_env" in explicit and "model_api_key" not in explicit:
+            explicit = explicit | {"model_api_key"}
+            args.model_api_key = None
         if args.model_profile:
             for field, value in ModelCatalog.select(
                 args.providers, args.model_profile

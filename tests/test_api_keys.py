@@ -322,7 +322,7 @@ class ConfigConnectionTest(unittest.IsolatedAsyncioTestCase):
             )
             with self.assertRaisesRegex(
                 ChatError,
-                "anthropic requires an API key in ANTHROPIC_API_KEY",
+                "anthropic requires an API key",
             ):
                 await self.chat(
                     defaults, ["--plain", "--prompt", "ping"],

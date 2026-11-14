@@ -17,8 +17,8 @@ class SourceEvidence(StrictModel):
     line: int = Field(ge=1)
     snapshot_id: str = Field(
         min_length=1,
-        description="Concrete snapshot of the source that was actually read; "
-        "required here, omitted from comment.",
+        description="Snapshot name returned with the source actually read; "
+        "the host resolves its ID. Required here, omitted from comment.",
     )
 
 

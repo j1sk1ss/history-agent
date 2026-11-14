@@ -11,7 +11,6 @@ from textual.widgets.select import NoSelection
 
 from history_agent.configuration.defaults import (
     PROVIDER_DEFAULTS,
-    PROVIDER_KEYS,
 )
 from history_agent.ui import config
 
@@ -24,11 +23,6 @@ class ConnectionChecks(MessagePump):
         ).placeholder = PROVIDER_DEFAULTS.get(
             provider, "http://127.0.0.1:8000/v1"
         )
-        self.query_one(
-            "#model_key_env", Input
-        ).placeholder = PROVIDER_KEYS.get(
-            provider, "HISTORY_AGENT_MODEL_API_KEY"
-        )
 
     @on(Select.Changed, "#provider")
     def provider_changed(self) -> None:
@@ -40,10 +34,20 @@ class ConnectionChecks(MessagePump):
         if event.input.id in (
             "model_url",
             "model",
-            "model_key_env",
+            "model_api_key",
             "system_one_url",
             "system_one_model",
             "timeout",
+            "max_output_tokens",
+        ):
+            self.schedule_connection_check()
+
+    @on(Checkbox.Changed)
+    def connection_option_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id in (
+            "no_thinking",
+            "no_stream",
+            "no_stream_usage",
         ):
             self.schedule_connection_check()
 
@@ -80,7 +84,6 @@ class ConnectionChecks(MessagePump):
         for name in (
             "model_url",
             "model",
-            "model_key_env",
             "system_one_url",
             "system_one_model",
         ):
@@ -89,19 +92,29 @@ class ConnectionChecks(MessagePump):
                 name,
                 self.query_one("#" + name, Input).value.strip() or None,
             )
+        args.model_api_key = self.query_one(
+            "#model_api_key", Input
+        ).value.strip()
+        args.model_key_env = None
         try:
             args.timeout = float(self.query_one("#timeout", Input).value)
             if not math.isfinite(args.timeout) or args.timeout <= 0:
                 raise ValueError()
+            args.max_output_tokens = int(
+                self.query_one("#max_output_tokens", Input).value
+            )
+            if args.max_output_tokens <= 0:
+                raise ValueError()
         except ValueError:
             self.query_one("#model-status", Static).update(
-                "[red]■[/] Model: invalid timeout"
+                "[red]■[/] Model: invalid request settings"
             )
             self.query_one("#model-connection-error", Static).update(
-                "Timeout must be a positive number."
+                "Timeout and output tokens must be positive numbers."
             )
             return
-        args.no_thinking = self.query_one("#no_thinking", Checkbox).value
+        for name in ("no_thinking", "no_stream", "no_stream_usage"):
+            setattr(args, name, self.query_one("#" + name, Checkbox).value)
         results = await asyncio.gather(
             asyncio.to_thread(config.probe_model_connection, args),
             asyncio.to_thread(config.probe_system_one_connection, args),

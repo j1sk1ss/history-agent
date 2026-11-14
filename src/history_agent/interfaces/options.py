@@ -47,13 +47,12 @@ SESSION_OPTIONS: tuple[tuple[tuple[str, ...], dict[str, object]], ...] = (
         },
     ),
     (
+        ("--model-api-key",),
+        {"help": "API key for the model connection"},
+    ),
+    (
         ("--model-key-env",),
-        {
-            "help": (
-                "Environment variable containing inference API "
-                "key; provider default if omitted"
-            )
-        },
+        {"help": argparse.SUPPRESS},
     ),
     (
         ("--system-one-url",),
