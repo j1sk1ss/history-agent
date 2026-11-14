@@ -60,6 +60,13 @@ class VerdictResponse:
             [address.model_dump() for address in verdict.evidence],
             self.client.snapshots,
         )
+        if len(verdict.comment) > 8000:
+            self.reject(
+                "Shorten the comment: host attribution and references "
+                "must fit in 8000 characters",
+                "Review comment is too long after host attribution; "
+                "no review was saved",
+            )
         if not verdict.comment:
             raise ChatError(
                 "Review explanation is empty after removing redundant metadata"

@@ -97,6 +97,13 @@ def connected(test):
 class ChatTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.fake = FakeHistory().__enter__()
+        self.fake.warnings = [
+            {
+                "warning_id": "warning",
+                "checker_name": "NULL",
+                "location": {"file_path": "src/a.c", "line": 3},
+            }
+        ]
         self.addCleanup(self.fake.__exit__)
         self.output = io.StringIO()
         self.redirect = contextlib.redirect_stderr(self.output)
@@ -212,7 +219,10 @@ class ChatTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("history_write", json.dumps(model.requests[0]["tools"]))
         self.assertEqual(len(self.fake.writes), 1)
-        self.assertEqual(self.fake.writes[0]["comment"], REVIEW["comment"])
+        self.assertEqual(
+            self.fake.writes[0]["comment"],
+            "Bismark said: " + REVIEW["comment"],
+        )
 
     @connected
     async def test_ambiguous_write_reloads_with_tools_disabled_and_no_retry(
@@ -236,6 +246,14 @@ class ChatTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.fake.writes), 1)
         self.assertEqual(len(model.requests), 2)
         self.assertEqual(model.requests[-1]["tools"], [])
+        self.assertEqual(
+            [
+                i
+                for i, message in enumerate(model.requests[-1]["messages"])
+                if message["role"] == "system"
+            ],
+            [0],
+        )
         self.assertTrue(harness.blocked)
 
     @connected

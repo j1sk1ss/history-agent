@@ -11,7 +11,9 @@ from urllib.parse import parse_qs, urlsplit
 
 ADDRESS = {
     "project_id": {
-        "type": "integer", "minimum": 0, "maximum": 9223372036854775807
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9223372036854775807,
     },
     "snapshot_id": {"type": "string", "minLength": 1},
     "file": {"type": "string", "minLength": 1},
@@ -24,7 +26,10 @@ SCOPE = {
 }
 PAGING = {
     "offset": {
-        "type": "integer", "minimum": 0, "maximum": 2147483647, "default": 0
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647,
+        "default": 0,
     },
     "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
 }
@@ -55,7 +60,7 @@ EXTENSION = {
                 "base_stream_id": SCOPE["stream_id"],
                 "base_snapshot_id": ADDRESS["snapshot_id"],
                 "subset": {
-                    "type": "string",
+                    "type": "choose",
                     "enum": ["appeared", "disappeared", "both"],
                     "default": "appeared",
                 },
@@ -75,7 +80,7 @@ EXTENSION = {
                 "stream_id": {"type": "string", "minLength": 1},
                 "checker_name": {"type": "string", "minLength": 1},
                 "match": {
-                    "type": "string",
+                    "type": "choose",
                     "enum": ["exact", "contains"],
                     "default": "exact",
                 },
@@ -105,11 +110,15 @@ EXTENSION = {
             {
                 **ADDRESS,
                 "before": {
-                    "type": "integer", "minimum": 0, "maximum": 199,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 199,
                     "default": 10,
                 },
                 "after": {
-                    "type": "integer", "minimum": 0, "maximum": 199,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 199,
                     "default": 10,
                 },
             },
@@ -123,10 +132,12 @@ EXTENSION = {
             {
                 **ADDRESS,
                 "column": {
-                    "type": "integer", "minimum": 1, "maximum": 2147483647,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647,
                 },
                 "relation": {
-                    "type": "string",
+                    "type": "choose",
                     "enum": ["definition", "declaration", "usage"],
                 },
                 **PAGING,
@@ -143,7 +154,7 @@ EXTENSION = {
                 "stream_id": {"type": "string", "minLength": 1},
                 "warning_id": {"type": "string", "minLength": 1},
                 "classification": {
-                    "type": "string",
+                    "type": "choose",
                     "enum": ["TP", "FP", "WF", "UC", "UD"],
                 },
                 "comment": {"type": "string", "minLength": 1},
@@ -468,16 +479,21 @@ class FakeHistory:
                     found = owner.comparison_warnings.get(subset, [])
                     if query.get("checker_name"):
                         found = [
-                            warning for warning in found
+                            warning
+                            for warning in found
                             if warning["checker_name"].casefold()
                             == query["checker_name"].casefold()
                         ]
                     offset, limit = int(query["offset"]), int(query["limit"])
                     data = {
-                        "current": current, "base": base, "subset": subset,
+                        "current": current,
+                        "base": base,
+                        "subset": subset,
                         "scope": base if subset == "disappeared" else current,
-                        "warnings": found[offset:offset + limit],
-                        "total": len(found), "offset": offset, "limit": limit,
+                        "warnings": found[offset : offset + limit],
+                        "total": len(found),
+                        "offset": offset,
+                        "limit": limit,
                         "has_more": offset + limit < len(found),
                     }
                     if data["has_more"]:
@@ -521,11 +537,20 @@ class FakeHistory:
                 elif action == "get_warning":
                     warning = copy.deepcopy(
                         next(
-                            w
-                            for w in owner.warnings
-                            if w["warning_id"] == query["warning_id"]
+                            (
+                                w
+                                for w in owner.warnings
+                                if w["warning_id"] == query["warning_id"]
+                            ),
+                            None,
                         )
                     )
+                    if warning is None:
+                        self.send_json(
+                            {"status": "ERROR", "error": "Warning not found"},
+                            404,
+                        )
+                        return
                     warning["attributes"] = copy.deepcopy(
                         owner.reviews.get(
                             query["warning_id"],

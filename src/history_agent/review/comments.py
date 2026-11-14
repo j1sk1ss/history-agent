@@ -36,6 +36,8 @@ def review_comment(
     snapshots: Collection[str] = (),
 ) -> str:
     text = text.strip()
+    while text.startswith("Bismark said:"):
+        text = text.removeprefix("Bismark said:").strip()
     for address in sorted(
         evidence, key=lambda value: len(value["file"]), reverse=True
     ):
@@ -80,4 +82,5 @@ def review_comment(
     ]
     if missing:
         text = text.rstrip() + "\n" + "; ".join(missing)
-    return text.strip()
+    text = text.strip()
+    return "Bismark said: " + text if text else ""

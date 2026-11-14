@@ -13,6 +13,8 @@ if __name__ == "__main__":
         if os.environ.get("PYTHONPATH")
         else ""
     )
+    # Never connect tests to a developer's Redis database.
+    os.environ["HISTORY_REDIS_URL"] = ""
     with tempfile.TemporaryDirectory(prefix="history-test-config-") as config:
         # Subprocess CLI tests must never load the developer's saved endpoints.
         os.environ["HISTORY_AGENT_CONFIG"] = str(Path(config) / "config.json")

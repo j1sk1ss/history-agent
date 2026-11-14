@@ -35,6 +35,9 @@ class ScriptedUI:
     def finish(self, result=None):
         pass
 
+    def reset(self):
+        self.events.append(("reset", {}))
+
     def error_message(self, text):
         self.errors.append(text)
 

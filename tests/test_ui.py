@@ -322,6 +322,31 @@ class InterfaceTest(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(disclosure.collapsed)
 
 
+    async def test_failed_tool_card_contains_actual_error_and_arguments(self):
+        app = self.make_app()
+        async with app.run_test(size=(100, 30)) as pilot:
+            app.adapter.event("tool_start", name="history_discover",
+                              action="agent_search_code", event_id="bad")
+            app.adapter.event("tool_end", name="history_discover",
+                              event_id="bad", error=True, seconds=0, bytes=0)
+            app.adapter.event(
+                "tool_result", name="history_discover", event_id="bad",
+                action="agent_search_code",
+                arguments={"action": "agent_search_code"},
+                response=(
+                    '{"error":"Unsupported action; use agent_resolve_symbol"}'
+                ),
+                error=True,
+            )
+            await pilot.pause()
+            app.refresh_display()
+            card = next(card for card in app.cards if card.kind == "tool")
+            self.assertEqual(card.heading, "ERROR | agent_search_code")
+            self.assertIn("Unsupported action", card.text)
+            self.assertIn("agent_search_code", card.text)
+            self.assertFalse(card.active)
+
+
 class JobInterfaceTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
@@ -542,11 +567,15 @@ class ConfigurationInterfaceTest(unittest.IsolatedAsyncioTestCase):
             app.screen.query_one("#model", Input).value = "qwen"
             app.screen.query_one("#history_user", Input).value = "reviewer"
             password.value = " secret "
+            retries = app.screen.query_one("#max_tool_retries", Input)
+            self.assertEqual(retries.value, "8")
+            retries.value = "16"
             await pilot.click("#save")
             await pilot.pause()
             saved = load_defaults()
             self.assertEqual(saved["history_user"], "reviewer")
             self.assertEqual(saved["history_password"], " secret ")
+            self.assertEqual(saved["max_tool_retries"], 16)
             self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
 
     async def test_settings_actions_stay_visible_in_small_terminal(self):

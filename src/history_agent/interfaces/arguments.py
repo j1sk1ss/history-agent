@@ -67,8 +67,8 @@ def parse_args(
         validate_defaults({name: getattr(args, name) for name in LIMIT_FIELDS})
     except ValueError as error:
         parser.error(str(error))
-    if args.overwrite_reviews and (not args.allow_write):
-        parser.error("--overwrite-reviews requires --allow-write")
+    if args.overwrite_reviews:
+        parser.error("Review overwrites are disabled; only UD can be saved")
     if args.prompt is not None and (args.batch or args.diff or args.resume):
         parser.error(
             (

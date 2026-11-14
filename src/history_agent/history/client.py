@@ -17,6 +17,7 @@ from history_agent.history.constants import (
     COMPARE_ACTION,
     CURRENT_ACTION,
     DOC_ACTION,
+    LINK_WARNINGS_ACTION,
     READ_ACTIONS,
     SCHEMA_CATALOG_ACTIONS,
     URL_ACTION,
@@ -24,10 +25,12 @@ from history_agent.history.constants import (
 )
 from history_agent.history.current import resolve_current
 from history_agent.history.guide import Guide, GuideError
+from history_agent.history.link_selection import LinkSelections
 from history_agent.history.links import resolve_history_url
 from history_agent.history.settings import HistoryError, Settings
 from history_agent.history.transport import HistoryTransport
 from history_agent.history.validation import validate_arguments
+from history_agent.history.writes import ReviewWriter
 from history_agent.review.comments import review_comment
 
 
@@ -42,13 +45,17 @@ class HistoryClient:
         )
         self._catalog: dict[str, ActionMetadata] | None = None
         self._legacy_comparison: bool = False
+        self._links: LinkSelections = LinkSelections()
         self._lock: RLock = threading.RLock()
+        self._writer = ReviewWriter(self._transport)
 
     def _load_guide(self) -> str:
         return self._transport.load_guide(self._guide.url)
 
     def _call(
-        self, action: str, query: dict[str, str | int | None] | None = None,
+        self,
+        action: str,
+        query: dict[str, str | int | None] | None = None,
         body: dict[str, str | None] | None = None,
     ) -> dict[str, object]:
         return self._transport._call(action, query, body)
@@ -122,70 +129,88 @@ class HistoryClient:
             }
 
     def execute(
-        self, action: str, arguments: dict[str, object], *,
+        self,
+        action: str,
+        arguments: dict[str, object],
+        *,
         write: bool = False,
     ) -> dict[str, object]:
         if action not in (WRITE_ACTIONS if write else READ_ACTIONS):
             raise HistoryError(
                 "Action is not allowed through this tool: " + action
             )
-        with self._lock:
-            schema: dict[str, object]
-            values: dict[str, object]
-            schema, values = self.prepare_arguments(action, arguments)
-            if action == DOC_ACTION:
+        return self._execute(action, arguments)
+
+    def _execute(self, action, arguments):
+        schema: dict[str, object]
+        values: dict[str, object]
+        schema, values = self.prepare_arguments(action, arguments)
+        if action == DOC_ACTION:
+            try:
+                return self._guide.checker(
+                    values["checker_name"],
+                    values["offset"],
+                    values["limit"],
+                )
+            except GuideError as error:
+                raise HistoryError(str(error)) from None
+        if action == COMPARE_ACTION and self._legacy_comparison:
+            return legacy_compare(self._call, values, HistoryError)
+        if action == URL_ACTION:
+            return self._links.bind(
+                resolve_history_url(
+                    self.execute,
+                    self.endpoint,
+                    values["url"],
+                    HistoryError,
+                )
+            )
+        if action == LINK_WARNINGS_ACTION:
+            return self._links.read(self.execute, values)
+        if action == CURRENT_ACTION:
+            return resolve_current(self.execute, values, HistoryError)
+        query: dict[str, str]
+        body: dict[str, str]
+        query, body = ({}, {})
+        for key, value in values.items():
+            if isinstance(value, bool):
+                value: str = str(value).lower()
+            target: dict[str, str] = (
+                body
+                if schema["properties"][key].get("x-http-parameter-location")
+                == "post"
+                else query
+            )
+            target[key] = str(value)
+
+        def send():
+            return self._call(action, query, body or None)
+
+        result = (
+            self._writer.save(values, send)
+            if action == "agent_set_review"
+            else send()
+        )
+        if action.startswith("agent_"):
+            data: dict[str, object] = result["data"]
+            if action == "agent_checker_info":
                 try:
-                    return self._guide.checker(
-                        values["checker_name"],
-                        values["offset"],
-                        values["limit"],
+                    documentation: dict[str, str | int | bool] = (
+                        self._guide.checker(values["checker_name"])
                     )
                 except GuideError as error:
-                    raise HistoryError(str(error)) from None
-            if action == COMPARE_ACTION and self._legacy_comparison:
-                return legacy_compare(self._call, values, HistoryError)
-            if action == URL_ACTION:
-                return resolve_history_url(
-                    self.execute, self.endpoint, values["url"], HistoryError
-                )
-            if action == CURRENT_ACTION:
-                return resolve_current(self.execute, values, HistoryError)
-            query: dict[str, str]
-            body: dict[str, str]
-            query, body = ({}, {})
-            for key, value in values.items():
-                if isinstance(value, bool):
-                    value: str = str(value).lower()
-                target: dict[str, str] = (
-                    body
-                    if schema["properties"][key].get(
-                        "x-http-parameter-location"
-                    )
-                    == "post"
-                    else query
-                )
-                target[key] = str(value)
-            result: dict[str, object] = self._call(action, query, body or None)
-            if action.startswith("agent_"):
-                data: dict[str, object] = result["data"]
-                if action == "agent_checker_info":
-                    try:
-                        documentation: dict[str, str | int | bool] = (
-                            self._guide.checker(values["checker_name"])
-                        )
-                    except GuideError as error:
-                        documentation = {
-                            "status": "unavailable",
-                            "error": str(error),
-                        }
-                    return {**data, "documentation": documentation}
-                return data
-            return {
-                key: value for key, value in result.items() if key != "status"
-            }
+                    documentation = {
+                        "status": "unavailable",
+                        "error": str(error),
+                    }
+                return {**data, "documentation": documentation}
+            return data
+        return {key: value for key, value in result.items() if key != "status"}
 
     def prepare_arguments(
-        self, action: str, arguments: dict[str, object],
+        self,
+        action: str,
+        arguments: dict[str, object],
     ) -> tuple[dict[str, object], dict[str, object]]:
         info: dict[str, object] = self.discover(action)
         schema: dict[str, object] = info["input_schema"]
@@ -202,4 +227,5 @@ class HistoryClient:
                 raise HistoryError(
                     "A non-empty review explanation is required"
                 )
+            values = validate_arguments(values, schema, None)
         return (schema, values)

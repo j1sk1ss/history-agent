@@ -48,7 +48,8 @@ class BatchRunner:
         self.root: Path = Path(root)
         self.model_identity: dict[str, str] = model_identity
         self.allow_write: bool = allow_write
-        self.allow_overwrite: bool = allow_overwrite
+        # Keep the old keyword compatible without granting overwrite rights.
+        self.allow_overwrite: bool = False
         self.on_event: Callable[..., None] = on_event or (
             lambda *args, **kwargs: None
         )
@@ -65,6 +66,7 @@ class BatchRunner:
         self, args: dict[str, object], *, write: bool = False,
     ) -> dict[str, object]:
         self.last_job_id = None
+        self.last_summary = None
         request: BatchRequest | ResumeRequest = self.validate_request(
             args, write
         )
@@ -90,6 +92,18 @@ class BatchRunner:
             self.last_summary = job.summary()
             job.close()
 
+    @property
+    def writes_may_have_completed(self) -> bool:
+        if not self.last_job_id:
+            return False
+        summary = self.last_summary
+        if not summary or summary.get("job_id") != self.last_job_id:
+            return True
+        return any(
+            summary["states"].get(state, 0)
+            for state in ("saved", "saving", "uncertain")
+        )
+
     def validate_request(
         self, args: dict[str, object], write: bool,
     ) -> BatchRequest | ResumeRequest:
@@ -103,14 +117,6 @@ class BatchRunner:
             ) from None
         if write and not self.allow_write:
             raise ChatError("Batch writes require --allow-write")
-        if (
-            isinstance(request, BatchRequest)
-            and request.overwrite
-            and not self.allow_overwrite
-        ):
-            raise ChatError(
-                "Replacing existing batch reviews requires --overwrite-reviews"
-            )
         return request
 
     def initialize_job(
@@ -165,8 +171,9 @@ class BatchRunner:
                     "This job saves reviews; enable live saving to resume it"
                 )
             job.enable_writes()
-        if job.get("overwrite") and not self.allow_overwrite:
-            raise ChatError("This checkpoint requires --overwrite-reviews")
+        # Old checkpoints cannot re-enable the removed overwrite capability.
+        if job.get("overwrite"):
+            job.set("overwrite", False)
 
     async def process_queue(self, job: Journal) -> None:
         self.on_event("batch_started", job_id=job.id)

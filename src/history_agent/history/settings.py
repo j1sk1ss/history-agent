@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from history_agent.history.cache_settings import validate_history_limits
 
 
 class HistoryError(Exception):
@@ -19,7 +21,18 @@ class Settings:
     user: str | None = None
     password: str | None = None
     session: str | None = None
-    timeout: float = 20
+    timeout: float = 600
+    redis_url: str = field(
+        default_factory=lambda: os.environ.get(
+            "HISTORY_REDIS_URL",
+            "redis://127.0.0.1:6379/0",
+        )
+    )
+    cache_ttl: int = 300
+    source_cache_ttl: int = 86400
+
+    def __post_init__(self):
+        validate_history_limits(self)
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -34,6 +47,10 @@ class Settings:
                     "HISTORY_USER",
                     "HISTORY_PASSWORD",
                     "HISTORY_SESSION",
+                    "HISTORY_TIMEOUT",
+                    "HISTORY_REDIS_URL",
+                    "HISTORY_CACHE_TTL",
+                    "HISTORY_SOURCE_CACHE_TTL",
                 }
                 if (
                     not isinstance(config, dict)
@@ -61,4 +78,8 @@ class Settings:
             user=value("HISTORY_USER"),
             password=value("HISTORY_PASSWORD"),
             session=value("HISTORY_SESSION"),
+            timeout=float(value("HISTORY_TIMEOUT", "600")),
+            redis_url=value("HISTORY_REDIS_URL", "redis://127.0.0.1:6379/0"),
+            cache_ttl=int(value("HISTORY_CACHE_TTL", "300")),
+            source_cache_ttl=int(value("HISTORY_SOURCE_CACHE_TTL", "86400")),
         )

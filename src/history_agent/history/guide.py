@@ -6,6 +6,7 @@ checker article.
 from __future__ import annotations
 
 import re
+import threading
 import time
 from collections.abc import Callable
 from html.parser import HTMLParser
@@ -139,10 +140,15 @@ class Guide:
         self.error: str | None
         self.expires: float
         self.parser, self.error, self.expires = None, None, 0
+        self._lock = threading.RLock()
 
     def checker(
         self, name: str, offset: int = 0, limit: int = 3000,
     ) -> dict[str, str | int | bool]:
+        with self._lock:
+            return self._checker(name, offset, limit)
+
+    def _checker(self, name, offset, limit):
         if time.monotonic() >= self.expires:
             try:
                 parser: GuideParser = GuideParser()

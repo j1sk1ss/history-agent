@@ -1,13 +1,30 @@
 ---
 name: history-review
-description: Investigate and classify Svace warnings through the shared history MCP tools, using source fragments and DXR navigation. Use for warning review and TP/FP/WF/UC/UD annotation without running analysis.
+description: Fetch Svace warnings from history links or checker names, and investigate requested reviews with source and DXR. Use for warning lists and TP/FP/WF/UC/UD annotation without running analysis.
 ---
 
 # Review a warning
 
+For a request to fetch/list warnings from a comparison link, use the host's
+resolved link result; call `agent_resolve_history_url` only if it was not supplied.
+Discover its `warnings_action` (`agent_warnings_from_link`) and pass
+`warnings_arguments` plus the user's `checker_name`. Only `offset` and `limit`
+are needed for further pages. The host keeps both snapshots and the subset;
+the model does not assemble IDs. If the checker name is missing, ask for it.
+Return the warnings/count; listing requires no classification or review job.
+An empty result is final for that selection: do not change subset or search
+the whole project to find something. Investigate/classify only when requested.
+
 In model tool calls, `*_id`, `snapshot_override`, `hash`, `mti` and `token_group` contain host names such as `diana`, `max` and `chloe`. Copy returned names exactly; the host resolves real server IDs. Never invent names or submit raw IDs. `HEAD` remains a snapshot selector. Names remain valid across reloads in this session.
 
-After a tool error the harness reloads context and supplies the error. Correct the failed request using its schema and existing names. Re-read missing schemas/source as needed; do not replay successful writes. If a write outcome is uncertain, inspect review history before retrying.
+After a tool error the harness reloads context and supplies the error. The default is eight recoveries, configurable with `--max-tool-retries` or settings; recovery is separate from normal model steps. Correct the failed request using its schema and existing names. Re-read missing schemas/source as needed; do not replay successful writes. If a write outcome is uncertain, inspect review history before retrying.
+
+In `history-chat`, resolved user links pin projects, branches, snapshots and
+comparison subset across follow-ups and reloads. `display` supplies readable
+project/branch labels; identity arguments use the returned host names. A new
+link replaces the binding and clears old model context; `/reset` clears it.
+For several links, choose one unambiguously. A rejected or unsupported link
+never permits falling back to another project or broadening the warning queue.
 
 Keep user-facing replies brief unless the user explicitly asks for a detailed
 report. Give the classification, a short reason and the key source location for
@@ -42,7 +59,7 @@ Get the warning metadata with `get_warning` to identify the exact checker.
 Read checker documentation before `agent_source`, navigation or trace, then
 inspect `get_all_reviews` before a verdict.
 
-For a requested checker, use `agent_find_warnings` with `checker_name`, an
+For a requested checker without a comparison link, use `agent_find_warnings` with `checker_name`, an
 explicit branch and snapshot. The default name match is case-insensitive exact;
 use `match="contains"` for a substring. Filter before paging with `offset` and
 `limit`. Names identify checker types, not individual warning IDs or messages.
@@ -80,7 +97,12 @@ For a whole-project or multi-warning review, use `review_batch` when it is liste
 by `history_discover` (available in the microharness). Discover its schema; when the request has no scope or URL, the host accepts
 empty `{}` arguments and pins the `current` scope itself. For explicit URLs,
 pass the resolved scope instead. Pass the user's task and project-specific rules.
-Use `history_read` for proposals; `history_write` requires authorization to save.
+Bulk jobs follow the session's live-save setting even through `history_read`;
+single-warning `history_read` requests only propose. `history_write` requires
+authorization to save. The host completes the queue and returns a summary;
+the parent chat does not classify a first warning returned by the job. If a
+read fails before saving, continue with returned `resume_action` and
+`resume_arguments`, preserving the checkpoint.
 The runner groups work by checker and uses a fresh model conversation for every
 warning, restoring the common rules, current checker's guide, current warning
 evidence and optional short same-checker pattern checklists. Queue, checker cache, decisions and progress live in a local
@@ -117,6 +139,7 @@ selected warning and source address through the configured server. Use the
 returned `read_action` / `read_arguments`; when the local `review_action` is
 available, use its `review_arguments` for a batch. A comparison without a subset
 defaults to First/appeared. Do not broaden the returned selection or guess IDs.
+For a warning list, prefer `warnings_action` / `warnings_arguments` as above.
 A URL alone selects context; saving still requires a request to annotate/save.
 
 A comparison URL has fragment
@@ -154,7 +177,7 @@ Use project-specific classification rules when supplied:
 - FP: the reported condition does not hold. Explain why the path is infeasible, the required state cannot arise, or the checker has otherwise misidentified the code.
 - WF: the reported condition holds, but addressing it would not be useful for this project. This includes confirmed intentional behavior, non-actionable test fixtures, generated code, accepted trade-offs or project-specific conventions. Explain both why the detector is technically correct and why the result is irrelevant or deliberately accepted. An explicit prior decision not to fix is sufficient when substantiated, but not required if project context demonstrates non-actionability.
 - UC: the checker condition or project relevance cannot be established from available evidence; explain what is missing.
-- UD: undecided; leave or reset to this state when requested.
+- UD: undecided; leave in this state when requested.
 
 Never classify a technically correct but irrelevant finding as FP. Do not classify a warning as WF merely because it is low severity, in a test/generated file, or absent from a later snapshot. Verify the actual code and the relevant project context. For TP, FP and WF, cite source evidence actually inspected. If that evidence is unavailable, use UC rather than inventing it.
 
@@ -163,8 +186,12 @@ through `history_write`, with an explicit branch, warning ID, classification and
 non-empty explanation. A request only to explain or inspect does not authorize
 writing. Include file/line evidence and uncertainty in the comment.
 
-Writes affect current branch state, not an immutable snapshot, and have no
-conditional-write protection. Check the current review before replacing it.
+The harness only saves unreviewed UD warnings. It reads live state without
+cache before every write and rejects existing classifications or review comments,
+including direct MCP writes and old overwrite-enabled jobs. It adds
+`Bismark said:` to model verdict comments; the model supplies the explanation.
+Writes affect current branch state; the server API has no atomic conditional
+write parameter for coordinating with external human edits.
 Verify the saved state with `get_warning` or `get_all_reviews`. If a write fails
 with an ambiguous network error, inspect history before retrying: retries can
 create duplicate commits. The adapter never retries ambiguous writes.

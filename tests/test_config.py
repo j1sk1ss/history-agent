@@ -28,6 +28,60 @@ class ConfigurationTest(unittest.TestCase):
         environment.start()
         self.addCleanup(environment.stop)
 
+    def test_recovery_budget_round_trips_and_cli_can_override_it(self):
+        self.assertEqual(parse_args([]).max_tool_retries, 8)
+        save_defaults(parse_args(["--max-tool-retries", "17"]))
+        saved = load_defaults()
+        self.assertEqual(saved["max_tool_retries"], 17)
+        self.assertEqual(parse_args([], defaults=saved).max_tool_retries, 17)
+        self.assertEqual(
+            parse_args(
+                ["--max-tool-retries", "3"],
+                defaults=saved,
+            ).max_tool_retries,
+            3,
+        )
+        for invalid in (0, -1, True, "8"):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                validate_defaults({"max_tool_retries": invalid})
+
+    def test_history_cache_and_timeout_round_trip_independently_of_model(self):
+        args = parse_args(
+            [
+                "--history-timeout",
+                "600",
+                "--timeout",
+                "35",
+                "--history-redis-url",
+                "rediss://cache-user:private-key@cache.example:6380/2",
+                "--history-cache-ttl",
+                "120",
+                "--history-source-cache-ttl",
+                "7200",
+            ]
+        )
+        save_defaults(args)
+        restored = parse_args([], defaults=load_defaults())
+        settings = history_settings(restored)
+        self.assertEqual(settings.timeout, 600)
+        self.assertEqual(restored.timeout, 35)
+        self.assertEqual(settings.redis_url, args.history_redis_url)
+        self.assertEqual(settings.cache_ttl, 120)
+        self.assertEqual(settings.source_cache_ttl, 7200)
+        self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
+        for values in (
+            {"history_timeout": 0},
+            {"history_timeout": float("inf")},
+            {"history_cache_ttl": -1},
+            {"history_source_cache_ttl": 1.5},
+            {"history_redis_url": "http://cache.example"},
+            {
+                "history_redis_url": "redis://cache.example:6379/0?socket_timeout=600"
+            },
+        ):
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                validate_defaults(values)
+
     def test_only_explicit_save_persists_reusable_settings(self):
         args = parse_args(
             [

@@ -21,6 +21,7 @@ from history_agent.review.actions import BATCH_REVIEW, DIFFERENCE_REVIEW
 from history_agent.review.batch import BatchRunner
 from history_agent.review.constants import BATCH_ACTION, DIFF_ACTION
 from history_agent.review.journal import Journal
+from history_agent.review.link_scope import LinkScope
 from history_agent.review.requests import (
     BatchCommand,
     BatchSelection,
@@ -49,12 +50,19 @@ class BatchRouter(ToolClient):
         self.client, self.runner = client, runner
         self.completed: dict[str, object] | None = None
         self.user_request: str = ""
+        self.link_scope = LinkScope(runner.history, runner.root)
 
     async def call_tool(
         self,
         name: str,
         arguments: dict[str, object],
     ) -> CallToolResult:
+        try:
+            arguments, resolved = self.link_scope.prepare(name, arguments)
+        except HistoryError as error:
+            raise ToolFailure(str(error)) from error
+        if resolved is not None:
+            return reply(resolved)
         action: str | None = arguments.get("action")
         if action in (BATCH_ACTION, DIFF_ACTION):
             if name != "history_discover":
@@ -65,12 +73,16 @@ class BatchRouter(ToolClient):
                 job_id = self.runner.last_job_id
                 raise ToolFailure(
                     str(error),
-                    context={"job_id": job_id} if job_id else {},
-                    uncertain_write=bool(job_id) and (
-                        name == "history_write" or self.runner.allow_write
-                    ),
+                    context={
+                        "job_id": job_id,
+                        "resume_action": action,
+                        "resume_arguments": {"job_id": job_id},
+                    } if job_id else {},
+                    uncertain_write=bool(job_id)
+                    and self.runner.writes_may_have_completed,
                 ) from error
         result = await self.client.call_tool(name, arguments)
+        self.link_scope.observe(arguments, result)
 
         if name == "history_discover" and not action and not result.is_error:
             data: dict[str, object] = json.loads(

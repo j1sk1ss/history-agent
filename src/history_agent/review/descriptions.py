@@ -8,10 +8,12 @@ BATCH_DESCRIPTION: str = (
     "scopes must be passed explicitly. The session save setting controls "
     "immediate server writes, including when called through "
     "history_read. Resume with only job_id. Existing reviews are "
-    "preserved by default. To investigate one warning, supply warning_id; "
+    "always preserved; only unreviewed UD can be saved. "
+    "To investigate one warning, supply warning_id; "
     "this reads only that warning and records timing. Single-warning "
     "proposals through history_read never write; use history_write only "
-    "when saving is requested."
+    "when saving is requested. The host processes the queue itself and "
+    "returns a completed summary, not a warning for this chat to classify."
 )
 
 DIFF_DESCRIPTION: str = (
@@ -22,5 +24,7 @@ DIFF_DESCRIPTION: str = (
     "branch. both uses current source. Disappearance is not proof of "
     "FP/fix. The session save setting controls immediate server writes, "
     "including when called through history_read. Resume with only "
-    "job_id."
+    "job_id. Only unreviewed UD warnings can be saved. "
+    "The host investigates the queue and returns a completed "
+    "summary, not the first warning or a worker context."
 )

@@ -14,8 +14,6 @@ from mcp.types import Tool
 
 from history_agent.configuration.capabilities import CapabilitySettings
 from history_agent.history.client import HistoryClient, HistoryError
-from history_agent.history.constants import URL_ACTION
-from history_agent.history.links import find_history_urls
 from history_agent.inference.model import ChatError, Model, compact
 from history_agent.prompts import Prompts
 from history_agent.review.batch import BatchRunner
@@ -29,14 +27,16 @@ from history_agent.review.system_one import (
     warning_context,
 )
 from history_agent.runtime.agent import Harness
+from history_agent.runtime.conversation_events import ConversationEvents
 from history_agent.runtime.interaction import UserInteraction
+from history_agent.runtime.link_context import prepare_links
 from history_agent.runtime.summary import ConversationSummary, pretty_json_text
 from history_agent.tools.client import CapabilityClient
 from history_agent.ui.bridge import UIAdapter
 from history_agent.ui.terminal import TerminalUI
 
 
-class Conversation(ConversationSummary):
+class Conversation(ConversationSummary, ConversationEvents):
     def __init__(
         self,
         client: Client,
@@ -67,6 +67,7 @@ class Conversation(ConversationSummary):
             getattr(self.args, "capabilities", {})
         )
         self.tools: list[Tool] = (await self.client.list_tools()).tools
+        await self.prepare_tools()
         self.system_one: SystemOne | None = None
         if self.args.system_one_model:
             adviser = SystemOne(
@@ -83,7 +84,6 @@ class Conversation(ConversationSummary):
             self.args.batch_state_dir,
             {"base": self.model.base, "model": self.model.name},
             allow_write=self.args.allow_write,
-            allow_overwrite=self.args.overwrite_reviews,
             on_event=self.batch_event,
             reuse_patterns=not self.args.no_patterns,
         )
@@ -97,10 +97,11 @@ class Conversation(ConversationSummary):
             self.tools,
             allow_write=self.args.allow_write,
             max_steps=self.args.max_steps,
+            max_tool_retries=self.args.max_tool_retries,
             max_context_bytes=self.args.max_context_bytes,
             max_tool_result_bytes=self.args.max_tool_result_bytes,
             stats=self.args.stats,
-            on_event=self.ui.event if self.ui else None,
+            on_event=self.model_events(),
         )
         transport.context = lambda: warning_context(self.harness.messages)
         transport.load_context = lambda: load_warning_context(
@@ -124,34 +125,20 @@ class Conversation(ConversationSummary):
         reviewer = Harness(
             transport,
             self.model,
-            self.tools,
+            self.worker_tools,
             allow_write=False,
             max_steps=self.args.max_steps,
+            max_tool_retries=self.args.max_tool_retries,
             max_context_bytes=self.args.max_context_bytes,
             max_tool_result_bytes=self.args.max_tool_result_bytes,
             stats=self.args.stats,
-            on_event=self.ui.event if self.ui else None,
+            on_event=self.model_events(job_id=self.runner.last_job_id),
         )
         transport.context = lambda: warning_context(reviewer.messages)
         transport.load_context = lambda: load_warning_context(
             item_client, reviewer.messages
         )
         return reviewer
-
-    def batch_event(self, kind: str, **data: object) -> None:
-        if self.ui:
-            self.ui.event(kind, **data)
-        elif kind in ("batch_started", "batch_progress"):
-            if kind == "batch_started":
-                print("batch job:", data["job_id"], file=sys.stderr)
-            else:
-                print(
-                    f"batch {data['done']}/{data['total']}: "
-                    f"{data['checker']} {data['warning_id']}",
-                    file=sys.stderr,
-                )
-        elif kind == "notice":
-            print(data["message"], file=sys.stderr)
 
     async def perform(self, operation: Coroutine[None, None, None]) -> None:
         if self.ui and getattr(self.ui, "async_prompt", False):
@@ -166,27 +153,7 @@ class Conversation(ConversationSummary):
             self.ui.begin(text)
         result: str | None = None
         try:
-            prefetched: list[
-                tuple[str, dict[str, object], dict[str, object]]
-            ] = []
-            urls: list[str] = find_history_urls(text)
-            if len(urls) > 4:
-                raise ChatError("Send at most four history links per request")
-            for url in urls:
-                try:
-                    resolved: dict[str, object] = await asyncio.to_thread(
-                        self.history.execute, URL_ACTION, {"url": url}
-                    )
-                except HistoryError as error:
-                    raise ChatError(str(error)) from None
-                prefetched.append((URL_ACTION, {"url": url}, resolved))
-                if self.ui:
-                    self.ui.event(
-                        "history_link",
-                        kind_name=resolved["kind"],
-                        scope=resolved["scope"],
-                        subset=resolved.get("subset"),
-                    )
+            prefetched = await prepare_links(self, text)
             result = await self.harness.ask(text, prefetched=prefetched)
             if not self.ui:
                 print(pretty_json_text(result))
@@ -248,6 +215,11 @@ class Conversation(ConversationSummary):
             else:
                 print(pretty_json_text(text))
         except BaseException as error:
+            self.diagnostics.event(
+                "batch_error", error=str(error),
+                error_type=type(error).__name__,
+                job_id=self.runner.last_job_id,
+            )
             if self.ui:
                 self.ui.event(
                     "failure",
@@ -282,6 +254,7 @@ class Conversation(ConversationSummary):
         return bool(self.ui and getattr(self.ui, "async_prompt", False))
 
     def reset(self) -> None:
+        self.router.link_scope.bind({})
         if self.runner.last_summary:
             self.retain_summary(self.runner.last_summary)
         else:

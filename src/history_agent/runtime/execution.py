@@ -9,6 +9,10 @@ from mcp import Client
 from mcp.types import CallToolResult
 
 from history_agent.inference.model import ChatError, compact
+from history_agent.runtime.action_catalog import (
+    refresh_actions,
+    validate_action,
+)
 from history_agent.runtime.recovery import ToolFailure
 from history_agent.runtime.tools import ToolClient
 
@@ -22,12 +26,14 @@ class ToolExecutor:
         *,
         quiet: bool,
         identity: int,
+        tools: list[dict[str, object]] | None = None,
     ) -> None:
         self.client: Client | ToolClient = client
         self.emit: Callable[..., None] = emit
         self.byte_limit: int = byte_limit
         self.quiet: bool = quiet
         self.identity: int = identity
+        self.tools = tools or []
 
     def event_id(self, call: dict[str, object]) -> str:
         return f"{self.identity}:{call['id']}"
@@ -45,6 +51,7 @@ class ToolExecutor:
             name=name,
             action=arguments.get("action"),
             event_id=event_id,
+            arguments=arguments,
         )
         if not self.quiet:
             print("tool:", name, file=sys.stderr)
@@ -53,6 +60,7 @@ class ToolExecutor:
             "review_diff",
         )
         try:
+            validate_action(name, arguments, self.tools)
             outcome: CallToolResult = await self.client.call_tool(
                 name, arguments
             )
@@ -65,6 +73,10 @@ class ToolExecutor:
                 seconds=time.monotonic() - started,
                 bytes=0,
             )
+            self.error_result(call, arguments, compact({
+                "error": str(error) or type(error).__name__,
+                **(error.context if isinstance(error, ToolFailure) else {}),
+            }))
             if isinstance(error, ToolFailure):
                 raise
             raise ToolFailure(
@@ -89,12 +101,27 @@ class ToolExecutor:
         except ValueError:
             data = None
         except ChatError as error:
+            self.error_result(call, arguments, compact({"error": str(error)}))
             raise ToolFailure(str(error), uncertain_write=uncertain) from error
         if outcome.is_error or (isinstance(data, dict) and data.get("error")):
-            raise ToolFailure(contents, uncertain_write=uncertain)
+            self.error_result(call, arguments, contents)
+            rejected = isinstance(data, dict) and data.get("write_rejected")
+            raise ToolFailure(
+                contents, uncertain_write=uncertain and not rejected
+            )
         if name == "history_write":
             self.verify_write(outcome)
+        if name == "history_discover" and isinstance(data, dict):
+            refresh_actions(self.tools, data)
         return contents
+
+    def error_result(self, call: dict, arguments: dict, response: str) -> None:
+        self.emit(
+            "tool_result", name=call["function"]["name"],
+            action=arguments.get("action"), event_id=self.event_id(call),
+            arguments=arguments.get("arguments", arguments),
+            response=response, error=True,
+        )
 
     def verify_write(self, outcome: CallToolResult) -> None:
         if outcome.is_error:

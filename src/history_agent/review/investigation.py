@@ -62,7 +62,8 @@ class Investigation(ReviewPrefetch):
             self.on_event,
         )
         raw: str = ""
-        for attempt in range(3):
+        retry_limit = reviewer.max_tool_retries
+        for attempt in range(retry_limit + 1):
             try:
                 raw = await self.obtain_response(reviewer, prompt, pending)
                 original_raw: str = (
@@ -72,7 +73,7 @@ class Investigation(ReviewPrefetch):
                 )
                 return await response.resolve(raw, original_raw)
             except ReadScopeError as error:
-                if attempt == 2:
+                if attempt == retry_limit:
                     raise
                 feedback = prompts.SCOPE_RETRY.format(
                     error=str(error),
@@ -84,7 +85,7 @@ class Investigation(ReviewPrefetch):
                 self.on_event(
                     "notice", message=(
                         f"Reloading warning {self.row.warning_id} "
-                        f"({attempt + 1}/2): {error}"
+                        f"({attempt + 1}/{retry_limit}): {error}"
                     ),
                 )
                 self.client.record.clear()
@@ -97,13 +98,14 @@ class Investigation(ReviewPrefetch):
                 if (
                     retriable is None
                     or not retriable.get("retry_investigation")
-                    or attempt == 2
+                    or attempt == retry_limit
                 ):
                     raise
                 self.on_event(
                     "notice", message=(
                         f"Reloading warning {self.row.warning_id} after "
-                        f"rejected verdict ({attempt + 1}/2): {error}"
+                        f"rejected verdict ({attempt + 1}/{retry_limit}): "
+                        f"{error}"
                     ),
                 )
                 self.client.record.clear()

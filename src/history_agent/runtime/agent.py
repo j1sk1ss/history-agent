@@ -30,6 +30,7 @@ class Harness(HarnessCapabilities):
         *,
         allow_write: bool = False,
         max_steps: int = 12,
+        max_tool_retries: int = 8,
         max_context_bytes: int = 65536,
         max_tool_result_bytes: int = 16384,
         stats: bool = False,
@@ -66,6 +67,7 @@ class Harness(HarnessCapabilities):
         self.max_steps: int
         self.max_context_bytes: int
         self.max_steps, self.max_context_bytes = max_steps, max_context_bytes
+        self.max_tool_retries: int = max_tool_retries
         self.max_tool_result_bytes: int
         self.stats: bool
         self.max_tool_result_bytes, self.stats = max_tool_result_bytes, stats
@@ -107,7 +109,8 @@ class Harness(HarnessCapabilities):
         size: int,
         started: float,
     ) -> None:
-        if not self.stats or self.on_event:
+        quiet = getattr(self.on_event, "quiet", self.on_event is not None)
+        if not self.stats or quiet:
             return
         usage: dict[str, object] = result.get("usage") or {}
         if not isinstance(usage, dict):
@@ -143,7 +146,9 @@ class Harness(HarnessCapabilities):
         self.messages.append({"role": "user", "content": text})
         try:
             self.prefetch(prefetched)
-            self.recovery = TurnRecovery(self.messages)
+            self.recovery = TurnRecovery(
+                self.messages, max_retries=self.max_tool_retries
+            )
             return await self.run_turn()
         except BaseException as error:
             self.blocked = True
@@ -163,10 +168,11 @@ class Harness(HarnessCapabilities):
             self.client,
             self.emit,
             self.max_tool_result_bytes,
-            quiet=self.on_event is not None,
+            quiet=getattr(self.on_event, "quiet", self.on_event is not None),
             identity=id(self),
+            tools=self.tools,
         )
-        for step in range(1, self.max_steps + 1):
+        for step in range(1, self.max_steps + self.max_tool_retries + 1):
             result: dict[str, object] = await self.request(step)
             message: dict[str, object]
             calls: list[tuple[dict[str, object], dict[str, object]]]
@@ -191,7 +197,7 @@ class Harness(HarnessCapabilities):
                 continue
             if answer is not None:
                 return self.recovery.finish(self, answer)
-            if step == self.max_steps:
+            if step - self.recovery.attempts == self.max_steps:
                 raise ChatError(
                     "Model step limit reached before executing more tools; "
                     "use /reset for a new task"

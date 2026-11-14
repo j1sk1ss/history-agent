@@ -14,6 +14,13 @@ SCOPE = {"project_id": 0, "stream_id": "main", "snapshot_id": "current"}
 class HistoryAPITest(unittest.TestCase):
     def setUp(self):
         self.fake = FakeHistory().__enter__()
+        self.fake.warnings = [
+            {
+                "warning_id": "warning",
+                "checker_name": "NULL",
+                "location": {"file_path": "src/a.c", "line": 3},
+            }
+        ]
         self.addCleanup(self.fake.__exit__)
         self.client = HistoryClient(Settings(self.fake.url, session="valid"))
 
@@ -65,7 +72,10 @@ class HistoryAPITest(unittest.TestCase):
         self.client.execute("agent_source", SOURCE)
         self.client.execute("agent_set_review", REVIEW, write=True)
         self.assertEqual(self.fake.requests[1]["action"], "agent_actions")
-        self.assertEqual(self.fake.writes[0]["comment"], REVIEW["comment"])
+        self.assertEqual(
+            self.fake.writes[0]["comment"],
+            "Bismark said: " + REVIEW["comment"],
+        )
         self.assertNotIn(
             "actions_agent", [r["action"] for r in self.fake.requests]
         )

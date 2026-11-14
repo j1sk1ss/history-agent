@@ -1,5 +1,7 @@
 """New reviews and checkpoint resumes are distinct validated commands."""
 
+from typing import Literal
+
 from pydantic import Field, RootModel, model_validator
 
 from history_agent.contracts import StrictModel
@@ -21,7 +23,7 @@ class BatchSelection(ComparisonOptions):
     checker_name: str | None = Field(default=None, min_length=1)
     warning_id: str | None = Field(default=None, min_length=1, max_length=200)
     instructions: str = Field(default="", max_length=8000)
-    overwrite: bool = False
+    overwrite: Literal[False] = False
 
     @model_validator(mode="after")
     def concrete_single_scope(self):

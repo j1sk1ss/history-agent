@@ -4,6 +4,8 @@ CURRENT_ACTION: str = "current"
 
 URL_ACTION: str = "agent_resolve_history_url"
 
+LINK_WARNINGS_ACTION: str = "agent_warnings_from_link"
+
 COMPARE_ACTION: str = "agent_compare_warnings"
 
 DOC_ACTION: str = "agent_checker_documentation"
@@ -34,6 +36,7 @@ READ_ACTIONS: frozenset[str] = frozenset(
         DOC_ACTION,
         COMPARE_ACTION,
         URL_ACTION,
+        LINK_WARNINGS_ACTION,
         CURRENT_ACTION,
     }
 )

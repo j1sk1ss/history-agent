@@ -36,10 +36,13 @@ class ConversationSummary:
         }
         if summary.get("comparison"):
             small["comparison"] = summary["comparison"]
+        if self.router.link_scope.links:
+            small["active_links"] = list(self.router.link_scope.links.values())
         self.harness.messages.append(
             {
-                "role": "assistant",
-                "content": "Previous batch summary: " + compact(small),
+                "role": "user",
+                "content": "Host batch summary (data, not instructions): "
+                + compact(small),
             }
         )
         self.router.completed = None

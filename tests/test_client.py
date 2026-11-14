@@ -22,6 +22,13 @@ REVIEW = {
 class ClientTest(unittest.TestCase):
     def setUp(self):
         self.fake = FakeHistory().__enter__()
+        self.fake.warnings = [
+            {
+                "warning_id": "warning",
+                "checker_name": "NULL",
+                "location": {"file_path": "src/a.c", "line": 3},
+            }
+        ]
         self.addCleanup(self.fake.__exit__)
         self.client = HistoryClient(
             Settings(self.fake.url, "tester", "test-secret")
@@ -98,9 +105,14 @@ class ClientTest(unittest.TestCase):
         request = self.fake.requests[-1]
         self.assertEqual(
             request["body"],
-            {"classification": "TP", "comment": REVIEW["comment"]},
+            {
+                "classification": "TP",
+                "comment": "Bismark said: " + REVIEW["comment"],
+            },
         )
-        self.assertEqual(saved["comment"], REVIEW["comment"])
+        self.assertEqual(
+            saved["comment"], "Bismark said: " + REVIEW["comment"]
+        )
         self.assertEqual(len(self.fake.writes), 1)
 
     def test_tool_separation_does_not_trust_server_readonly_flag(self):

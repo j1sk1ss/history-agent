@@ -4,3 +4,4 @@ rich>=13.7,<16
 textual>=8.2,<9
 SQLAlchemy>=2.0,<3
 pydantic>=2.12,<3
+redis>=5,<8

@@ -87,6 +87,33 @@ class SettingsSections:
                     id="history_password",
                 ),
             )
+            for name, label, value in (
+                (
+                    "history_timeout",
+                    "Request timeout (seconds)",
+                    history.timeout,
+                ),
+                ("history_redis_url", "Redis cache URL", history.redis_url),
+                (
+                    "history_cache_ttl",
+                    "Warning cache lifetime (seconds)",
+                    history.cache_ttl,
+                ),
+                (
+                    "history_source_cache_ttl",
+                    "Source cache lifetime (seconds)",
+                    history.source_cache_ttl,
+                ),
+            ):
+                configured = getattr(self.args, name, None)
+                yield SettingsField(
+                    label,
+                    Input(
+                        str(configured if configured is not None else value),
+                        id=name,
+                        password=name == "history_redis_url",
+                    ),
+                )
 
     def review_fields(self):
         with SettingsGroup("Review", id="review-settings"):
@@ -138,6 +165,7 @@ class SettingsSections:
         with Collapsible(title="Limits and timeouts", id="limits-settings"):
             for name, label in (
                 ("max_steps", "Model requests per investigation"),
+                ("max_tool_retries", "Automatic recovery attempts"),
                 ("max_output_tokens", "Output tokens per request"),
                 ("max_context_bytes", "Context budget (JSON bytes)"),
                 ("max_tool_result_bytes", "Tool result budget (bytes)"),

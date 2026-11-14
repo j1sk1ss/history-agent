@@ -45,7 +45,10 @@ from history_agent.ui.settings_help import SETTINGS_HELP
 
 
 class ConfigurationScreen(
-    SettingsSections, ModelPicker, ConnectionChecks, ModalScreen,
+    SettingsSections,
+    ModelPicker,
+    ConnectionChecks,
+    ModalScreen,
 ):
     TITLE: str = "History settings"
     CSS_PATH: Path = Path(__file__).with_name("config.tcss")
@@ -103,6 +106,7 @@ class ConfigurationScreen(
                 "system_one_url",
                 "system_one_model",
                 "prompts_file",
+                "history_redis_url",
             ):
                 setattr(
                     args,
@@ -131,7 +135,7 @@ class ConfigurationScreen(
                 args.model_url = "http://127.0.0.1:8000/v1"
             for name in LIMIT_FIELDS:
                 convert: type[int] | type[float] = (
-                    float if name == "timeout" else int
+                    float if name in ("timeout", "history_timeout") else int
                 )
                 setattr(
                     args,
@@ -149,16 +153,13 @@ class ConfigurationScreen(
             )
             if args.provider not in LOCAL_PROVIDERS and not args.model:
                 raise ValueError("Enter a model ID for this provider")
-            if (
-                args.provider in COMPATIBLE_PROVIDERS
-                and args.model_url
-            ):
+            if args.provider in COMPATIBLE_PROVIDERS and args.model_url:
                 from history_agent.interfaces.cli import model_base
 
                 model_base(args.model_url)
-            if args.overwrite_reviews and not args.allow_write:
+            if args.overwrite_reviews:
                 raise ValueError(
-                    "Overwriting reviews requires allowing review writes"
+                    "Review overwrites are disabled; only UD can be saved"
                 )
             save_defaults(args)
         except (ValueError, OSError) as error:

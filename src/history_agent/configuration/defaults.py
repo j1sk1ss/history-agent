@@ -25,6 +25,7 @@ from history_agent.configuration.credentials import (
 )
 from history_agent.configuration.files import private_write
 from history_agent.configuration.models import ModelCatalog
+from history_agent.history.cache_settings import validate_redis_url
 
 PROVIDER_DEFAULTS: dict[str, str] = {
     "ollama": "http://127.0.0.1:11434/v1",
@@ -40,7 +41,9 @@ PROVIDER_DEFAULTS: dict[str, str] = {
 PROVIDERS: tuple[str, ...] = ("openai-compatible", *PROVIDER_DEFAULTS)
 LOCAL_PROVIDERS: tuple[str, ...] = ("openai-compatible", "ollama", "llama")
 COMPATIBLE_PROVIDERS: tuple[str, ...] = (
-    *LOCAL_PROVIDERS, "deepseek", "litellm",
+    *LOCAL_PROVIDERS,
+    "deepseek",
+    "litellm",
 )
 TEXT_FIELDS: tuple[str, ...] = (
     "prompts_file",
@@ -54,6 +57,7 @@ TEXT_FIELDS: tuple[str, ...] = (
     "history_url",
     "history_user",
     "history_password",
+    "history_redis_url",
 )
 BOOL_FIELDS: tuple[str, ...] = (
     "allow_write",
@@ -65,10 +69,14 @@ BOOL_FIELDS: tuple[str, ...] = (
 )
 LIMIT_FIELDS: tuple[str, ...] = (
     "max_steps",
+    "max_tool_retries",
     "max_output_tokens",
     "max_context_bytes",
     "max_tool_result_bytes",
     "timeout",
+    "history_timeout",
+    "history_cache_ttl",
+    "history_source_cache_ttl",
 )
 SAVED_FIELDS: tuple[str, ...] = (
     *TEXT_FIELDS,
@@ -93,7 +101,8 @@ def validate_defaults(
     values: dict[str, str | bool | int | float | None],
 ) -> dict[str, str | bool | int | float | None]:
     if not isinstance(values, dict) or set(values) - {
-        *SAVED_FIELDS, "model_key_env",
+        *SAVED_FIELDS,
+        "model_key_env",
     }:
         raise ValueError(
             "Expected chat settings; unknown configuration fields"
@@ -118,13 +127,20 @@ def validate_defaults(
         if name in BOOL_FIELDS and type(value) is not bool:
             raise ValueError(f"{name} must be true or false")
         if name in LIMIT_FIELDS:
+            if value is None and name.startswith("history_"):
+                continue
             expected: tuple[type[int] | type[float], ...] = (
-                (int, float) if name == "timeout" else (int,)
+                (int, float)
+                if name in ("timeout", "history_timeout")
+                else (int,)
             )
             if (
                 type(value) not in expected
                 or value <= 0
-                or (name == "timeout" and not math.isfinite(value))
+                or (
+                    name in ("timeout", "history_timeout")
+                    and not math.isfinite(value)
+                )
             ):
                 raise ValueError(f"{name} must be positive")
     if values.get("model_profile"):
@@ -138,6 +154,7 @@ def validate_defaults(
         if values.get(name):
             valid_url(values[name])
     validate_key(values.get("model_api_key"))
+    validate_redis_url(values.get("history_redis_url"))
     validate_key_env(values.get("model_key_env"))
     if values.get("no_thinking") and provider not in LOCAL_PROVIDERS:
         raise ValueError(

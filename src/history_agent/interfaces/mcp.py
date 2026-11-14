@@ -12,6 +12,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 from history_agent.history.client import HistoryClient, HistoryError, Settings
+from history_agent.history.writes import ReviewWriteRejected
 from history_agent.prompts import Prompts
 from history_agent.skills.catalog import catalog as skill_catalog
 from history_agent.skills.catalog import read_skill
@@ -45,6 +46,9 @@ class HistoryTools:
     ) -> dict[str, object]:
         try:
             return operation(*args, **kwargs)
+        except ReviewWriteRejected as error:
+            return {"error": str(error), "write_rejected": True,
+                    "write_attempted": False}
         except HistoryError as error:
             raise ToolError(str(error)) from error
 
@@ -73,7 +77,7 @@ class HistoryTools:
     ) -> dict[str, object]:
         """
         Read warnings, traces, source or DXR. Get the action's schema with
-        history_discover first.
+        history_discover first. Bulk review jobs follow the session save mode.
         """
         return self.execute(self.client.execute, action, arguments)
 
@@ -84,8 +88,8 @@ class HistoryTools:
         stream_id: str | None = None,
     ) -> dict[str, object]:
         """
-        Select a default project/branch/snapshot; alphabetic projects,
-        first snapshot, no searching by the model.
+        Select scope: history-chat pins active user links; otherwise use
+        alphabetical project/branch and first snapshot.
         """
         args: dict[str, str | int] = {
             key: value
@@ -104,8 +108,9 @@ class HistoryTools:
         arguments: dict[str, object],
     ) -> dict[str, object]:
         """
-        Save an authorized warning review using agent_set_review; requires
-        classification and explanation.
+        Save authorized reviews only for unreviewed UD warnings. The host
+        checks fresh state and prefixes comments with Bismark said:.
+        Discover action-specific arguments first.
         """
         return self.execute(self.client.execute, action, arguments, write=True)
 

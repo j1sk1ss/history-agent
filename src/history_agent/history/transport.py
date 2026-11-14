@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import http.client
 import http.cookiejar
 import json
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
 from http.client import HTTPResponse
 
+from history_agent.history.cache import ResponseCache
+from history_agent.history.errors import request_failure
 from history_agent.history.guide import GuideError
 from history_agent.history.settings import HistoryError, Settings
 from history_agent.http import NoRedirects
@@ -55,8 +59,17 @@ class HistoryTransport:
         )
         self._session: str | None = settings.session
         self._authenticated: bool = bool(settings.session)
+        self._auth_lock = threading.RLock()
+        self._auth_generation = 0
+        self.cache = ResponseCache(settings, self.endpoint)
 
     def load_guide(self, url: str) -> str:
+        return self.cache.read(
+            "guide", {"url": url}, None,
+            lambda: {"html": self._load_guide(url)},
+        )["html"]
+
+    def _load_guide(self, url: str) -> str:
         headers: dict[str, str] = {"Accept": "text/html"}
         if self._session:
             headers["Cookie"] = "sid=" + self._session
@@ -118,12 +131,11 @@ class HistoryTransport:
             with response:
                 status: int = response.code
                 raw: bytes = response.read(MAX_RESPONSE_BYTES + 1)
-        except (OSError, urllib.error.URLError) as error:
+        except (
+            OSError, urllib.error.URLError, http.client.HTTPException,
+        ) as error:
             raise HistoryError(
-                (
-                    "History request failed; outcome may be unknown. "
-                    "Inspect review history before retrying a write."
-                )
+                request_failure(action, error, self.settings.timeout)
             ) from error
         if len(raw) > MAX_RESPONSE_BYTES:
             raise HistoryError(
@@ -170,12 +182,24 @@ class HistoryTransport:
         self, action: str, query: dict[str, str | int | None] | None = None,
         body: dict[str, str | None] | None = None,
     ) -> dict[str, object]:
-        if not self._authenticated and self.settings.user is not None:
-            self._login()
+        return self.cache.read(
+            action, query, body,
+            lambda: self._uncached_call(action, query, body),
+        )
+
+    def _uncached_call(self, action, query=None, body=None):
+        with self._auth_lock:
+            if not self._authenticated and self.settings.user is not None:
+                self._login()
+                self._auth_generation += 1
+            generation = self._auth_generation
         try:
             return self._request(action, query, body)
         except HistoryError as error:
             if not error.auth_error or self.settings.user is None:
                 raise
-            self._login()
+            with self._auth_lock:
+                if generation == self._auth_generation:
+                    self._login()
+                    self._auth_generation += 1
             return self._request(action, query, body)

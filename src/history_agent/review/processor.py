@@ -7,6 +7,10 @@ import copy
 from collections.abc import Awaitable, Callable
 
 from history_agent.history.client import HistoryClient
+from history_agent.history.writes import (
+    ReviewStateConflict,
+    ReviewWriteRejected,
+)
 from history_agent.inference.model import ChatError
 from history_agent.review import patterns
 from history_agent.review.classification import STATUSES
@@ -38,7 +42,9 @@ class ItemProcessor:
         self.reuse_patterns: bool = reuse_patterns
 
     async def current(
-        self, scope: dict[str, str | int], warning_id: str,
+        self,
+        scope: dict[str, str | int],
+        warning_id: str,
     ) -> dict[str, object]:
         result: dict[str, object] = await asyncio.to_thread(
             self.history.execute,
@@ -57,7 +63,10 @@ class ItemProcessor:
         return copy.deepcopy(attributes)
 
     async def process(
-        self, job: Journal, row: ReviewItem, ids: dict[str, int],
+        self,
+        job: Journal,
+        row: ReviewItem,
+        ids: dict[str, int],
     ) -> None:
         self.progress(job, row)
         current: dict[str, object] = await self.current(
@@ -95,7 +104,10 @@ class ItemProcessor:
         )
 
     def verify_previous_write(
-        self, job: Journal, row: ReviewItem, current: dict[str, object],
+        self,
+        job: Journal,
+        row: ReviewItem,
+        current: dict[str, object],
         ids: dict[str, int],
     ) -> None:
         if matches(current, ReviewVerdict.model_validate(row.verdict), ids):
@@ -107,7 +119,10 @@ class ItemProcessor:
         )
 
     async def propose(
-        self, job: Journal, row: ReviewItem, current: dict[str, object],
+        self,
+        job: Journal,
+        row: ReviewItem,
+        current: dict[str, object],
         ids: dict[str, int],
     ) -> tuple[ReviewVerdict, dict[str, object]] | None:
         if row.state == "proposed":
@@ -121,7 +136,7 @@ class ItemProcessor:
             reviewed: bool = current["classification_id"] != ids[
                 STATUSES["UD"]
             ] or bool(current.get("comment"))
-            if not job.get("overwrite") and reviewed:
+            if reviewed:
                 job.update(row.warning_id, "skipped")
                 return None
             baseline = current
@@ -138,13 +153,20 @@ class ItemProcessor:
         return verdict, baseline
 
     async def save(
-        self, job: Journal, row: ReviewItem, verdict: ReviewVerdict,
-        baseline: dict[str, object], ids: dict[str, int],
+        self,
+        job: Journal,
+        row: ReviewItem,
+        verdict: ReviewVerdict,
+        baseline: dict[str, object],
+        ids: dict[str, int],
     ) -> bool:
         scope: dict[str, str | int] = job.get("scope")
         warning_id: str = row.warning_id
         if await self.current(scope, warning_id) != baseline:
             job.update(warning_id, "conflict")
+            return False
+        if baseline.get("classification_id") != ids[STATUSES["UD"]]:
+            job.update(warning_id, "skipped")
             return False
         job.update(warning_id, "saving")
         try:
@@ -164,13 +186,23 @@ class ItemProcessor:
                 await self.current(scope, warning_id), verdict, ids
             ):
                 raise ChatError("Saved review could not be verified")
+        except ReviewStateConflict:
+            job.update(warning_id, "conflict")
+            return False
+        except ReviewWriteRejected:
+            job.update(warning_id, "proposed")
+            raise
         except BaseException:
             job.update(warning_id, "uncertain")
             raise
         return True
 
     def finish(
-        self, job: Journal, row: ReviewItem, verdict: ReviewVerdict, *,
+        self,
+        job: Journal,
+        row: ReviewItem,
+        verdict: ReviewVerdict,
+        *,
         saved: bool,
     ) -> None:
         job.update(row.warning_id, "saved" if saved else "reviewed")
@@ -186,7 +218,9 @@ class ItemProcessor:
 
 
 def matches(
-    current: dict[str, object], verdict: ReviewVerdict, ids: dict[str, int],
+    current: dict[str, object],
+    verdict: ReviewVerdict,
+    ids: dict[str, int],
 ) -> bool:
     return (
         current.get("classification_id")

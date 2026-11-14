@@ -6,6 +6,31 @@ from pathlib import Path
 from history_agent.configuration.defaults import PROVIDERS
 
 SESSION_OPTIONS: tuple[tuple[tuple[str, ...], dict[str, object]], ...] = (
+    (
+        ("--history-timeout",),
+        {
+            "type": float,
+            "help": "History server timeout in seconds (default: 600)",
+        },
+    ),
+    (
+        ("--history-redis-url",),
+        {"help": "Redis response cache (default: redis://127.0.0.1:6379/0)"},
+    ),
+    (
+        ("--history-cache-ttl",),
+        {
+            "type": int,
+            "help": "Mutable history response cache lifetime (default: 300s)",
+        },
+    ),
+    (
+        ("--history-source-cache-ttl",),
+        {
+            "type": int,
+            "help": "Concrete source/trace cache lifetime (default: 86400s)",
+        },
+    ),
     (("--model-profile",), {"help": "Saved provider/model to use"}),
     (
         ("--prompts-file",),
@@ -99,9 +124,21 @@ SESSION_OPTIONS: tuple[tuple[tuple[str, ...], dict[str, object]], ...] = (
     ),
     (
         ("--max-steps",),
-        {"type": int, "default": 12, "help": "Model requests per user turn"},
+        {
+            "type": int,
+            "default": 12,
+            "help": "Normal model requests per turn, excluding error recovery",
+        },
     ),
     (("--max-output-tokens",), {"type": int, "default": 2048}),
+    (
+        ("--max-tool-retries",),
+        {
+            "type": int,
+            "default": 8,
+            "help": "Automatic context reloads after tool errors (default: 8)",
+        },
+    ),
     (
         ("--max-context-bytes",),
         {
@@ -201,10 +238,7 @@ REVIEW_OPTIONS: tuple[tuple[tuple[str, ...], dict[str, object]], ...] = (
         ("--overwrite-reviews",),
         {
             "action": "store_true",
-            "help": (
-                "Permit replacing existing reviews in explicitly "
-                "selected batch jobs"
-            ),
+            "help": argparse.SUPPRESS,
         },
     ),
     (

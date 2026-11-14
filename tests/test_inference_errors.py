@@ -175,3 +175,21 @@ class ModelErrorTest(unittest.TestCase):
                 self.assertIn("HTTP 400", detail)
                 self.assertNotIn("credential-secret", detail)
                 self.assertNotIn("private-body", detail)
+
+    def test_litellm_system_message_order_rejection_is_explained(self):
+        nested = {"error": {
+            "message": "System message must be at the beginning. private-body",
+            "param": None,
+        }}
+        body = io.BytesIO(json.dumps({"error": {
+            "message": "Hosted_vllmException - " + json.dumps(nested),
+            "param": None,
+        }}).encode())
+        detail = self.request_failure(HTTPError(
+            "https://proxy.example/v1", 400, "Bad Request", {}, body,
+        ))
+        self.assertIn(
+            "system instructions must be in the initial message", detail
+        )
+        self.assertNotIn("private-body", detail)
+        self.assertTrue(body.closed)

@@ -3,6 +3,7 @@
 import copy
 
 from history_agent.inference.model import ChatError, compact
+from history_agent.runtime.recovery_context import retained_messages
 
 
 class ToolFailure(ChatError):
@@ -19,41 +20,37 @@ class ToolFailure(ChatError):
 
 
 class TurnRecovery:
-    def __init__(self, messages: list[dict[str, object]]) -> None:
-        self.seed = []
-        host_calls = set()
-        for message in messages:
-            calls = message.get("tool_calls", [])
-            if calls and all(
-                call["id"].startswith(("host-", "batch-read-"))
-                for call in calls
-            ):
-                host_calls.update(call["id"] for call in calls)
-                self.seed.append(copy.deepcopy(message))
-            elif message["role"] in ("system", "user") or (
-                message["role"] == "tool"
-                and message.get("tool_call_id") in host_calls
-            ):
-                self.seed.append(copy.deepcopy(message))
+    def __init__(
+        self, messages: list[dict[str, object]], *, max_retries: int = 8,
+    ) -> None:
+        self.max_retries = max_retries
+        self.system = copy.deepcopy(messages[0])
         self.attempts = 0
         self.write_executed = False
         self.stop_after_feedback = False
         self.error = ""
+        self.failures: list[dict[str, object]] = []
 
     def reload(self, harness, call: dict, error: ToolFailure) -> None:
-        if self.attempts >= 2:
+        if self.attempts >= self.max_retries:
             raise ChatError(
-                "Tool failed after 2 automatic reloads: " + str(error)
+                f"Tool failed after {self.max_retries} automatic reloads: "
+                + str(error)
             ) from error
         self.attempts += 1
         self.error = str(error)[:1500]
         self.stop_after_feedback = error.uncertain_write or self.write_executed
+        self.failures.append({"error": self.error, **error.context})
         instruction = (
             "The host automatically reloaded the context after a tool error. "
             "The error is provided below. Correct the request using "
             "discovered schemas and existing names; use smaller pages. "
-            "Do not repeat successful writes. Re-read missing schemas or "
-            "source as needed."
+            "Successful tool results below remain verified evidence. "
+            "Use only the actions enumerated in the tool definitions. "
+            "Do not repeat unsupported actions or successful writes. "
+            "Use supplied resume_action/resume_arguments "
+            "to continue the existing checkpoint instead of "
+            "starting a new review job."
         )
         if self.stop_after_feedback:
             instruction += (
@@ -61,8 +58,11 @@ class TurnRecovery:
                 "response. Explain the error and ask the user to inspect "
                 "warning/review history before retrying; do not claim success."
             )
-        harness.messages = copy.deepcopy(self.seed)
-        harness.messages.append({"role": "system", "content": instruction})
+        harness.messages = retained_messages(
+            harness.messages, harness.max_context_bytes // 2
+        )
+        harness.messages[0] = copy.deepcopy(self.system)
+        harness.messages[0]["content"] += "\n\n" + instruction
         harness.messages.extend(
             [
                 {"role": "assistant", "content": None, "tool_calls": [call]},
@@ -74,6 +74,7 @@ class TurnRecovery:
                             **error.context,
                             "error": self.error,
                             "context_reloaded": True,
+                            "previous_errors": self.failures[-4:-1],
                         }
                     ),
                 },
@@ -81,7 +82,10 @@ class TurnRecovery:
         )
         harness.emit(
             "notice",
-            message=f"Automatic reload {self.attempts}/2: {self.error}",
+            message=(
+                f"Automatic reload {self.attempts}/{self.max_retries}: "
+                f"{self.error}"
+            ),
         )
 
     def finish(self, harness, answer: str) -> str:

@@ -11,10 +11,11 @@ def find_history_urls(text: str) -> list[str]:
     links: list[str] = []
     for match in re.finditer('https?://[^\\s<>"\\u00a0()\\[\\]]+', text):
         url: str = match.group().rstrip(".,;)]}")
-        if urlsplit(url).fragment.split("/", 1)[0] not in (
+        parsed = urlsplit(url)
+        if parsed.fragment.split("/", 1)[0] not in (
             "compare_svace2svace",
             "show",
-        ):
+        ) and not parsed.path.endswith("/history/svacelight/index.html"):
             continue
         if url not in links:
             links.append(url)
@@ -63,7 +64,14 @@ class HistoryLink:
             "kind": "comparison" if comparison else "project",
             "current": current,
             "saves_reviews": False,
+            "display": {
+                "current_project": parts[1], "current_branch": parts[2],
+            },
         }
+        if comparison:
+            result["display"].update(
+                base_project=parts[4], base_branch=parts[5],
+            )
         warning: str = (
             self.comparison_view(current, result)
             if comparison

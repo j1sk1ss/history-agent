@@ -151,6 +151,7 @@ class BatchTest(unittest.IsolatedAsyncioTestCase):
                 model,
                 tools,
                 max_steps=4,
+                max_tool_retries=2,
                 on_event=kwargs.get("on_event", lambda *args, **kwargs: None),
             )
             transport.context = lambda: warning_context(reviewer.messages)

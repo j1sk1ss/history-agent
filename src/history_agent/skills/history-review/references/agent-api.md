@@ -11,12 +11,24 @@ credentials, integer conversion and scope validation stay in the host.
 checker names, CWE numbers and line/column offsets retain their meaning.
 Names survive reload within a session; a new session resolves scope again.
 
+Resolved links include `display` labels for project and branch names. Labels
+identify the user's selection in prose; tool identity fields still use host
+names. In `history-chat`, links pin all scopes and comparison subsets across
+follow-ups and reloads. Conflicting reads/writes, broader queues, old link handles
+and unrelated checkpoint resumes are rejected before execution. `history_current`
+returns the active link scope instead of choosing an alphabetical default.
+A new set of links replaces the binding and clears prior model context; `/reset`
+clears it. With several links, choose one unambiguously. Unknown URL routes fail
+explicitly instead of selecting a default project. These chat restrictions do
+not change the standalone HTTP API's parameters.
+
 The contract below describes HTTP transport; the host translates model names
 to its raw IDs before sending requests. Examples are model-facing arguments
 with names already returned by tools, never names to invent.
 
-In `history-chat`, tool errors trigger up to two context reloads with explicit error
-feedback. Correct arguments or use smaller pages. Re-read missing schemas/source as
+In `history-chat`, tool errors trigger up to eight context reloads by default,
+configurable with `--max-tool-retries` or **Automatic recovery attempts** in settings.
+Recovery has a separate budget from normal model steps. Correct arguments or use smaller pages. Re-read missing schemas/source as
 needed; do not replay successful writes. An uncertain write disables tools for the feedback response; inspect
 review history before any later retry.
 
@@ -28,6 +40,9 @@ human-readable parameter help without schemas. The Python adapter prefers
 `actions_agent` and uses `agent_actions` when only that older name is advertised.
 `history_discover(action=...)` exposes the selected schema and available session
 and constraint metadata. Numeric bounds and defaults come from the server.
+The server's enum dialect uses `type: "choose"` with a string `enum`; the adapter
+exposes it as standard JSON Schema `type: "string"`, preserving choices,
+defaults and HTTP placement. Models never submit `choose` as a parameter value.
 Extension responses are `{"status":"OK","data":...}`; errors use the existing
 HTTP 400 / `status: ERROR` envelope. The catalog declares which actions require
 a valid history session. Configured credentials/session are handled by the
@@ -107,7 +122,8 @@ This legacy fallback requires concrete snapshot IDs.
 
 The microharness additionally discovers local `review_diff` through its three
 tools. It accepts the comparison scope, subset (default `appeared`), optional
-`checker_name`, `instructions` and `overwrite`, or only `job_id` for resume.
+`checker_name` and `instructions`, or only `job_id` for resume. `overwrite=true`
+is rejected; old checkpoints cannot re-enable overwrites.
 Current and base snapshots may be IDs or `HEAD`; the host resolves `HEAD` through
 `get_snapshots(number=1)` for each project/branch before creating the job. Review
 queues and resumed jobs always use those pinned concrete snapshots.
@@ -156,10 +172,13 @@ Use TP when the detected issue holds and is relevant, FP when the reported condi
 hold, and WF when the condition does hold but is not actionable in the project's context.
 WF is not a false positive. A technically correct warning in an intentional test fixture or
 accepted implementation can be WF when that rationale is supported by evidence.
-Writes use the normal permission and history commit API and affect current
-branch state. They have no conditional-write protection; inspect existing
-reviews before overwriting and inspect history before retrying an uncertain
-write. The legacy review API can materialize an unset `trust_rank` as zero;
+The adapter only saves unreviewed UD warnings, reading live `get_warning(HEAD)`
+without cache immediately before the POST. Existing classifications and review
+comments are protected in every write path. Host attribution adds exactly one
+`Bismark said:` prefix after normalizing the explanation. Identical warning writes
+are serialized locally and with a Redis lease when Redis is available. The
+server itself has no atomic compare-and-set parameter for external human edits.
+Inspect history before retrying an uncertain write. The legacy review API can materialize an unset `trust_rank` as zero;
 this extension does not change that existing behavior.
 
 MCP adapters and model/client setup are maintained outside the Svace repository.
@@ -177,6 +196,18 @@ clients use the read action and their own review loop. No web page is fetched
 and no reviews are saved. A missing comparison subset defaults to appeared.
 The selected warning/source location is returned separately as a UI cursor.
 An unknown project or ambiguous name is an error rather than a guessed ID.
+
+For comparisons the resolver also returns `link_id`, `warnings_action`
+(`agent_warnings_from_link`) and `warnings_arguments`. Discover that action and
+copy `warnings_arguments`, adding the checker name supplied by the user. Its
+only inputs are `link_id`, required `checker_name`, optional `offset` (default 0)
+and `limit` (default 20, max 100). `link_id` is a host name in model calls. The
+host retains the resolved current/base snapshots and URL subset, filters the
+exact case-insensitive checker before paging, and returns the comparison page.
+It never falls back to every warning in the project or changes an empty subset.
+Missing checker names need a user answer, not a guessed name. This adapter-local
+read lists warnings without classifying or saving. Review actions remain for
+requests to investigate/classify; a URL alone does not start them.
 
 `history-chat` resolves links from the user's request before the first model
 completion and supplies compact tool results with these arguments. Resolved

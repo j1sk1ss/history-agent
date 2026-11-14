@@ -84,6 +84,7 @@ class NamesTest(unittest.TestCase):
             "base_snapshot_id": "private-base-opaque",
             "location": {"snapshot_override": SCOPE["snapshot_id"]},
             "warning_id": "private-warning-opaque",
+            "selected_warning_id": "private-warning-opaque",
             "job_id": "private-job",
             "hash": "private-file-hash",
             "token_group": "private-token",
@@ -93,6 +94,7 @@ class NamesTest(unittest.TestCase):
         self.assertEqual(encoded["stream_id"], "max")
         self.assertEqual(encoded["snapshot_id"], "chloe")
         self.assertEqual(encoded["base_project_id"], "diana")
+        self.assertEqual(encoded["selected_warning_id"], encoded["warning_id"])
         self.assertEqual(encoded["location"]["snapshot_override"], "chloe")
         self.assertEqual(names.decode(encoded), raw)
         self.assertEqual(names.encode(raw), encoded)
@@ -145,6 +147,11 @@ class NamesTest(unittest.TestCase):
         result = names.redact_error(message)
         self.assertIn("Unknown snapshot name at src/a1.c", result)
         self.assertNotIn("opaque-project-value", result)
+        result = names.redact_error(
+            "Stopped; opaque-project-value. Read src/a1.c"
+        )
+        self.assertNotIn("opaque-project-value", result)
+        self.assertIn("src/a1.c", result)
 
     def test_fenced_verdicts_and_history_links(self):
         context = ModelContext()
@@ -269,7 +276,9 @@ class NamedHarnessTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(harness.model_context.names.forward), 3)
 
     async def test_invalid_batch_request_reloads_and_can_be_corrected(self):
-        runner = SimpleNamespace(last_job_id=None, allow_write=True)
+        runner = SimpleNamespace(
+            last_job_id=None, allow_write=True, history=None, root=None,
+        )
         client = BatchRouter(Transport(), runner)
 
         def corrected(messages, tools):
@@ -497,7 +506,28 @@ class NamedHarnessTest(unittest.IsolatedAsyncioTestCase):
             return answer(calls=[call("history_discover", {})])
 
         model = ScriptedModel(step, step, step)
-        harness = Harness(client, model, TOOLS, on_event=lambda *a, **k: None)
+        harness = Harness(
+            client, model, TOOLS, max_tool_retries=2,
+            on_event=lambda *a, **k: None,
+        )
         with self.assertRaisesRegex(ChatError, "2 automatic reloads"):
             await harness.ask("Discover")
         self.assertEqual(len(client.calls), 3)
+
+    async def test_default_recovery_budget_survives_eight_failures(self):
+        client = Transport(*[
+            reply({"error": "Unavailable"}, error=True)
+        ] * 8, reply({"ok": True}))
+
+        def step(messages, tools):
+            return answer(calls=[call("history_discover", {})])
+
+        model = ScriptedModel(*[step] * 9, lambda m, t: answer("Recovered"))
+        harness = Harness(
+            client, model, TOOLS, max_steps=2,
+            on_event=lambda *a, **k: None,
+        )
+        self.assertEqual(await harness.ask("Discover"), "Recovered")
+        self.assertEqual(len(client.calls), 9)
+        self.assertEqual(harness.recovery.attempts, 8)
+        self.assertFalse(harness.blocked)

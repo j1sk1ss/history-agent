@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import copy
-
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
@@ -12,9 +10,28 @@ from history_agent.history.constants import READ_ACTIONS
 from history_agent.history.settings import HistoryError
 
 
+def normalize_schema(value: object) -> object:
+    """Translate the history server's enum dialect into JSON Schema."""
+    if isinstance(value, list):
+        return [normalize_schema(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    result = {key: normalize_schema(item) for key, item in value.items()}
+    if result.get("type") == "choose":
+        choices = result.get("enum")
+        if (
+            not isinstance(choices, list)
+            or not choices
+            or not all(isinstance(item, str) for item in choices)
+        ):
+            raise ValueError("Expected nonempty string choices")
+        result["type"] = "string"
+    return result
+
+
 def extension_action(name: str, metadata: dict[str, object]) -> ActionMetadata:
     try:
-        schema: dict[str, object] = copy.deepcopy(metadata["input_schema"])
+        schema: dict[str, object] = normalize_schema(metadata["input_schema"])
         if not isinstance(schema, dict):
             raise ValueError("Expected an object input schema")
         Draft202012Validator.check_schema(schema)

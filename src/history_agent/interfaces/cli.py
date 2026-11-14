@@ -20,6 +20,14 @@ from history_agent.runtime.session import converse
 
 def history_settings(args: argparse.Namespace) -> Settings:
     settings: Settings = Settings.from_env()
+    for option, field in (
+        ("history_timeout", "timeout"), ("history_redis_url", "redis_url"),
+        ("history_cache_ttl", "cache_ttl"),
+        ("history_source_cache_ttl", "source_cache_ttl"),
+    ):
+        value = getattr(args, option, None)
+        if value is not None:
+            settings = replace(settings, **{field: value})
     if args.history_url:
         settings = replace(settings, url=args.history_url)
     if args.history_user is not None and args.history_password is not None:

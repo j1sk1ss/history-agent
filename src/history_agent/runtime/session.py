@@ -147,6 +147,7 @@ class Session:
             arguments, resume = await command_arguments(
                 text, self.conversation.args, self.conversation.history
             )
+            self.conversation.router.link_scope.bind({})
             await self.conversation.perform(
                 self.conversation.run_batch(arguments, resume)
             )

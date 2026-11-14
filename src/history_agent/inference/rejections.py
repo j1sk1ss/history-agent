@@ -68,6 +68,13 @@ def rejected_parameter(error: HTTPError) -> str:
     ):
         return GENERIC_HINT
     for record in records:
+        if isinstance(record, str) and (
+            "System message must be at the beginning" in record
+        ):
+            return (
+                " Conversation format rejected: system instructions must "
+                "be in the initial message. Restart the updated harness."
+            )
         if isinstance(record, str) and (match := TOKEN_LIMIT.search(record)):
             parameter, requested, bound, limit = match.groups()
             return (

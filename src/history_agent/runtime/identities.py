@@ -47,6 +47,8 @@ INSTRUCTIONS = (
 
 
 def identity_kind(key: str) -> str | None:
+    if key == "selected_warning_id":
+        return "warning"
     if key in ("snapshot_override", "snapshotId", "snapshot"):
         return "snapshot"
     if key in ("hash", "mti", "token_group"):
@@ -94,6 +96,12 @@ class IdentityMap:
             return [self.decode_id(kind, entry) for entry in value]
         entry = self.reverse.get(value) if isinstance(value, str) else None
         if not entry or entry[0] != kind:
+            if kind == "link":
+                raise IdentityError(
+                    "Unknown link name. Copy link_id from the host's resolved "
+                    "warnings_arguments; do not guess a link or use current "
+                    "defaults instead."
+                )
             raise IdentityError(
                 f"Unknown {kind} name. Copy an existing name from the tool "
                 "results or resolve scope with history_current; raw IDs "
@@ -171,7 +179,7 @@ class IdentityMap:
             }:
                 continue
             value = re.sub(
-                r"(?<![\w/.\\])" + re.escape(str(raw)) + r"(?![\w/.\\])",
+                r"(?<![\w/.\\])" + re.escape(str(raw)) + r"(?![\w/\\]|\.\w)",
                 alias,
                 value,
             )

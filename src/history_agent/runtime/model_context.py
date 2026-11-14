@@ -10,6 +10,26 @@ from history_agent.runtime.identities import INSTRUCTIONS, IdentityMap
 from history_agent.runtime.structured import json_fragments
 
 
+def hide_host_locations(value: object) -> object:
+    if isinstance(value, list):
+        return [hide_host_locations(entry) for entry in value]
+    if isinstance(value, dict):
+        return {
+            key: "Checkpoint managed by the host; resume with job_id"
+            if key == "checkpoint" and isinstance(entry, str)
+            else "History link resolved by the host"
+            if key in ("url", "history_url")
+            and isinstance(entry, str)
+            and (
+                key == "history_url"
+                or re.search(r"#(?:show|compare_svace2svace)/", entry)
+            )
+            else hide_host_locations(entry)
+            for key, entry in value.items()
+        }
+    return value
+
+
 class ModelContext:
     def __init__(self) -> None:
         self.names = IdentityMap()
@@ -25,16 +45,7 @@ class ModelContext:
         return value
 
     def packet(self, value: object) -> object:
-        if isinstance(value, list):
-            return [self.packet(entry) for entry in value]
-        if not isinstance(value, dict):
-            return value
-        encoded = self.names.encode(value)
-        # A resolved URL's structured read/review arguments are authoritative.
-        for key in ("url", "history_url"):
-            if key in encoded:
-                encoded[key] = "History link resolved by the host"
-        return encoded
+        return hide_host_locations(self.names.encode(value))
 
     def messages(
         self, messages: list[dict[str, object]]
@@ -55,14 +66,16 @@ class ModelContext:
             for call in message.get("tool_calls", []):
                 function = call["function"]
                 function["arguments"] = compact(
-                    self.names.encode(json.loads(function["arguments"]))
+                    self.packet(json.loads(function["arguments"]))
                 )
         if result and result[0]["role"] == "system":
             result[0]["content"] += " " + INSTRUCTIONS
         return result
 
     def tools(self, tools: list[dict[str, object]]) -> list[dict[str, object]]:
-        result = copy.deepcopy(tools)
+        result = [tool for tool in copy.deepcopy(tools)
+                  if tool["function"]["parameters"].get("properties", {})
+                  .get("action", {}).get("enum") != []]
         for tool in result:
             function = tool["function"]
             function["parameters"] = self.names.schema(function["parameters"])

@@ -40,9 +40,21 @@ async def complete_model(
         error: BaseException | None
         value = error = None
         try:
+            emit("model_request", messages=messages, tools=tools, model={
+                field: getattr(model, field, None) for field in (
+                    "provider", "base", "name", "max_output_tokens",
+                    "stream", "stream_usage", "no_thinking", "timeout",
+                )
+            })
             value = model.complete(messages, tools, emit)
+            emit("model_response", response=value)
         except BaseException as caught:
             error = caught
+            if not stopped.is_set():
+                try:
+                    on_event("model_error", message=str(caught))
+                except Exception:
+                    pass
         try:
             loop.call_soon_threadsafe(deliver, value, error)
         except RuntimeError:

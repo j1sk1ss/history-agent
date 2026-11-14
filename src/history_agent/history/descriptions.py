@@ -5,14 +5,24 @@ CURRENT_DESCRIPTION: str = (
     "search projects, branches or snapshots. Projects and branches sort "
     "by name; first returned snapshot wins. Supply project_id, "
     "project_name or stream_id to narrow the selection. URL links take "
-    "precedence."
+    "precedence: history-chat returns the active link scope and rejects "
+    "conflicting constraints."
 )
 
 URL_DESCRIPTION: str = (
     "Resolve a SvaceLight comparison/project/warning URL to explicit "
-    "project IDs, branches, concrete snapshots and ready read/review "
-    "arguments. No reviews are saved. Comparison defaults to appeared "
-    "(First); preserves Second/Both from URL."
+    "scope and ready read/review arguments. For comparison warnings, use "
+    "warnings_action with warnings_arguments plus the user's checker_name. "
+    "Comparison defaults to appeared (First); preserves Second/Both. "
+    "display contains project/branch labels; identity fields use host names."
+)
+
+LINK_WARNINGS_DESCRIPTION: str = (
+    "Fetch warnings of the user-named checker from a resolved comparison "
+    "link. Copy link_id from warnings_arguments; add checker_name and "
+    "optional offset/limit. The host keeps both snapshots and subset pinned. "
+    "An empty result stays empty; never broaden it to the whole project. "
+    "This action only lists warnings, without reviewing or saving them."
 )
 
 COMPARE_DESCRIPTION: str = (

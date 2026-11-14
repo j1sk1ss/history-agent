@@ -38,6 +38,16 @@ class ResolveUrlRequest(StrictModel):
     url: str = Field(min_length=1, max_length=16384)
 
 
+class LinkWarningsRequest(StrictModel):
+    link_id: str = Field(
+        min_length=1,
+        description="Link name returned by agent_resolve_history_url",
+    )
+    checker_name: str = Field(min_length=1)
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=20, ge=1, le=100)
+
+
 class CheckerDocumentationRequest(StrictModel):
     checker_name: str = Field(min_length=1)
     offset: int = Field(default=0, ge=0)

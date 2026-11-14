@@ -1,6 +1,19 @@
 """Hover descriptions for the connection and review settings."""
 
 SETTINGS_HELP: dict[str, str] = {
+    "history_timeout": "History server request timeout (default 600 seconds).",
+    "history_redis_url": (
+        "Redis response cache shared across harness sessions. Identical reads "
+        "share one in-flight request. Blank uses the bounded local fallback."
+    ),
+    "history_cache_ttl": (
+        "Cache lifetime for warning lists and mutable metadata. Writes "
+        "invalidate these entries; live review checks always bypass cache."
+    ),
+    "history_source_cache_ttl": (
+        "Cache lifetime for source and traces at concrete snapshots. HEAD "
+        "requests always go to the server."
+    ),
     "check-connections": (
         "Send short test requests to the configured main and System 1 "
         "models. Green square: connected; red square: unavailable or disabled."
@@ -49,12 +62,17 @@ SETTINGS_HELP: dict[str, str] = {
         "Checked: save each validated verdict to the server immediately, "
         "before reviewing the next warning. Unchecked: keep results in the "
         "local job without changing server reviews. Existing reviews are "
-        "preserved unless overwriting is explicitly enabled."
+        "preserved: only UD warnings without review comments can be saved."
     ),
     "max_steps": (
         "The maximum number of model requests for one chat turn or one "
-        "warning investigation, including tool-calling steps. This limit "
-        "does not control the number of warnings in a job."
+        "warning investigation, including tool-calling steps. Error recovery "
+        "has its own budget. This does not limit warning counts in a job."
+    ),
+    "max_tool_retries": (
+        "Maximum automatic context reloads after tool errors or rejected "
+        "evidence (default 8). Recovery requests have a separate budget from "
+        "normal model steps. Uncertain writes still require review inspection."
     ),
     "max_output_tokens": (
         "The maximum output tokens per model request. A low limit may "

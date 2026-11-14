@@ -185,6 +185,8 @@ class BackendPresenter:
                 kind="tool",
             )
         response: str = data["response"]
+        if data.get("error"):
+            card.heading = "ERROR | " + str(data.get("action") or data["name"])
         try:
             result: object = json.loads(response)
         except ValueError:
